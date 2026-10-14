@@ -2867,6 +2867,43 @@ process.stdin.on("end", () => {
     expect(workflow).toContain("tools/release/src/notifications/feishu-notice.ts");
   });
 
+  it.each(["0.24.1", "0.25.0"])("[P1] cuts and pushes a release when main's packaged version is %s", async (mainVersion) => {
+    const workflow = await readFile(cutReleaseWorkflowPath, "utf8");
+    const script = extractWorkflowRunScript(workflow, "Create branch + bump version + push");
+    const dir = await mkdtemp(join(tmpdir(), "od-release-recut-"));
+    const checkout = join(dir, "checkout");
+    const remote = join(dir, "remote.git");
+    const branch = "release/v0.25.0";
+    const env = workflowFixtureEnv({ VERSION: "0.25.0", BRANCH: branch, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" });
+    const git = (args: string[]) => execFileAsync("git", args, { cwd: checkout, env });
+
+    try {
+      await mkdir(join(checkout, "apps", "packaged"), { recursive: true });
+      await writeFile(join(checkout, "apps", "packaged", "package.json"), `${JSON.stringify({ name: "fixture", version: mainVersion }, null, 2)}\n`);
+      await execFileAsync("git", ["init", "--bare", remote], { env });
+      await git(["init", "--initial-branch=main"]);
+      await git(["config", "user.name", "fixture"]);
+      await git(["config", "user.email", "fixture@example.com"]);
+      await git(["add", "."]);
+      await git(["commit", "-m", "main fixture"]);
+      await git(["remote", "add", "origin", remote]);
+      const mainSha = (await git(["rev-parse", "HEAD"])).stdout.trim();
+
+      await execFileAsync("bash", ["-c", script], { cwd: checkout, env });
+
+      const cutSha = (await git(["rev-parse", "HEAD"])).stdout.trim();
+      expect(cutSha).not.toBe(mainSha);
+      expect((await git(["rev-parse", "HEAD^"])).stdout.trim()).toBe(mainSha);
+      expect((await git(["log", "-1", "--format=%an|%s"])).stdout.trim()).toBe("open-design-release-bot[bot]|chore(release): v0.25.0");
+      expect((await git(["ls-remote", "--heads", "origin", branch])).stdout.trim()).toBe(`${cutSha}\trefs/heads/${branch}`);
+      expect(JSON.parse(await readFile(join(checkout, "apps", "packaged", "package.json"), "utf8")).version).toBe("0.25.0");
+      expect((await git(["diff", "--name-only", "HEAD^", "HEAD"])).stdout.trim()).toBe(mainVersion === "0.25.0" ? "" : "apps/packaged/package.json");
+      expect((await git(["status", "--porcelain"])).stdout.trim()).toBe("");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("[P1] skips the scheduled minor cut until the highest release branch is published stable", async () => {
     const workflow = await readFile(cutReleaseWorkflowPath, "utf8");
     const gate = sectionBetween(
