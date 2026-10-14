@@ -621,6 +621,22 @@ describe('project preview containment routes', () => {
     expect(await text.text()).not.toContain('data-od-preview-build-focus');
   });
 
+  it('upgrades a persisted Motion player for thumbnail previews while raw source bytes remain unchanged', async () => {
+    const projectId = await createProject({ kind: 'video', intent: 'motion-design' });
+    const source = '<!doctype html><html><head><meta name="od-motion-output" content="video"></head><body><main data-composition-id="main"></main><script data-od-motion-source-player="5">oldPlayer();</script></body></html>';
+    await writeProjectFile(projectId, 'index.html', source);
+    const plain = await fetch(`${baseUrl}/api/projects/${projectId}/raw/index.html`);
+    expect(await plain.text()).toBe(source);
+    const thumbnail = await fetch(`${baseUrl}/api/projects/${projectId}/raw/index.html?odMotionPreview=1&odMotionThumbnail=1`);
+    expect(thumbnail.status).toBe(200);
+    const html = await thumbnail.text();
+    expect(html).not.toContain('oldPlayer();');
+    expect(html).toContain('data-od-motion-source-player="6"');
+    expect(html).toContain("searchParams.get('odMotionThumbnail')");
+    expect(html.match(/<script data-od-motion-source-player/g)).toHaveLength(1);
+    expect(html).not.toContain('data-od-url-scroll-bridge');
+  });
+
   it('rejects invalid preview scopes and escaping preview-url paths', async () => {
     const projectId = await createProject();
     await writeProjectFile(projectId, 'index.html', '<!doctype html>');

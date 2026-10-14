@@ -29,8 +29,8 @@ export function deliverableSyntaxFinalizerEnabled(
 
 /**
  * Resolve the canonical output and run the syntax finalizer for every
- * successful physical Run. Strategy protocol state is intentionally absent
- * from this boundary: a complete HTML artifact is sufficient evidence.
+ * successful physical Run. Media export validity is owned by the exporter,
+ * independent of task orchestration and model-authored plans.
  */
 export async function finalizeSuccessfulRunDeliverable(input: {
   artifactCount: number;

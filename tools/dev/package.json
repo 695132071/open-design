@@ -24,6 +24,9 @@
     "tsx": "4.22.3",
     "typescript": "6.0.3"
   },
+  "optionalDependencies": {
+    "@powerformer/vela-cli": "0.1.4-test.0"
+  },
   "engines": {
     "node": "~24"
   }

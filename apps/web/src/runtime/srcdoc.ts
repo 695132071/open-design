@@ -1,3 +1,4 @@
+import { injectMotionSourcePlayer, markMotionHostedPreview } from '@open-design/contracts/runtime/motion-source-player';
 /**
  * Wrap an artifact's HTML for a sandboxed iframe. Corresponds to
  * buildSrcdoc in packages/runtime/src/index.ts — the reference version also
@@ -67,6 +68,8 @@ import {
 import { isApprovedFontStylesheetHref } from './deck-thumbnail-parser';
 
 export type SrcdocOptions = {
+  /** Live embedded motion preview only; do not enable for exports/captures. */
+  motionPreview?: boolean;
   deck?: boolean;
   baseHref?: string;
   initialSlideIndex?: number;
@@ -355,7 +358,8 @@ export function buildSrcdoc(
   // user prints the preview iframe (Cmd+P → Save as PDF), Chromium uses the
   // sanitized title as the default filename — one that Microsoft Teams will
   // accept. Only the title text changes; visible page content is untouched.
-  const withSafeTitle = sanitizeTitleInDoc(wrapped);
+  const motionSource = options.motionPreview && !options.freezeMotion ? markMotionHostedPreview(wrapped) : wrapped;
+  const withSafeTitle = sanitizeTitleInDoc(options.freezeMotion ? motionSource : injectMotionSourcePlayer(motionSource));
   const withOdIds = annotateMissingOdIds(withSafeTitle);
   const withSourcePaths = options.editBridge ? annotateManualEditSourcePaths(withOdIds) : withOdIds;
   const withBase = options.baseHref ? injectBaseHref(withSourcePaths, options.baseHref) : withSourcePaths;

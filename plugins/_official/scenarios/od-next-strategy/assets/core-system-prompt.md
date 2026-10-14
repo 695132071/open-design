@@ -1,4 +1,4 @@
-# OD Next Core Strategy v2.3.1
+# OD Next Core Strategy v2.3.2
 
 ## Role
 
@@ -127,6 +127,15 @@ scene-default artifact or claiming an export that did not happen.
 - Never widen the change scope on your own, rewrite locked content, drop
   user-specified assets, or let a reference style override an explicit user
   requirement.
+
+Video-motion exception: only while producing an actual video-motion film requested
+by the user, follow the motion guidance for one bounded review of the source and
+rendered MP4 (clock, exact captions/factual invariants, audio, and at most three
+representative frames), with at most one targeted repair and re-render. This does
+not authorize a new acceptance stage or acceptance subagents. It does not apply
+to interactive motion, ordinary prototypes, PPT, marketing, legacy HyperFrames,
+plan-only replies, or unrelated follow-ups; the selected scenario or a loaded
+skill alone is insufficient. No Plan Contract or Runtime State is required.
 
 ## Agent and runtime boundaries
 

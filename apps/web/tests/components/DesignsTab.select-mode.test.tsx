@@ -33,11 +33,7 @@ const project: Project = {
 };
 
 function stubCoverProbe(status = 200, statusText = 'OK') {
-  const fetchMock = vi.fn(async () => ({
-    ok: status >= 200 && status < 300,
-    status,
-    statusText,
-  }) as Response);
+  const fetchMock = vi.fn(async () => new Response('', { status, statusText }));
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }

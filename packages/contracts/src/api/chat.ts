@@ -1289,6 +1289,16 @@ export const CHAT_ARTIFACT_SNAPSHOT_STATES = [
 
 export type ChatArtifactSnapshotState = (typeof CHAT_ARTIFACT_SNAPSHOT_STATES)[number];
 
+/** Validated geometry and authored frame time shared by a Motion source/MP4 pair. */
+export interface MotionArtifactPreview {
+  width: number;
+  height: number;
+  duration: number;
+  posterTime: number;
+  sourcePath: string;
+  videoPath: string;
+}
+
 /**
  * One artifact as a chat turn refers to it.
  *
@@ -1310,6 +1320,8 @@ export interface ChatArtifactRef {
   snapshotId?: string;
   /** Static cover for a `latest_with_static_preview` card. */
   thumbnailUrl?: string;
+  /** Frozen composition geometry and authored cover time for video Motion. */
+  motionPreview?: MotionArtifactPreview;
   /** Static cover for an `immutable_snapshot` card. */
   snapshotUrl?: string;
   snapshotState: ChatArtifactSnapshotState;

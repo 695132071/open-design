@@ -27,7 +27,15 @@ export interface CommunityTemplateUseTarget {
   prompt: string;
   chipId: string;
   projectKind: ProjectKind;
+  /** Use binds the template as its type's own example card, so Home produces
+   *  the same result as picking it from that type's example list. */
+  asExample: boolean;
 }
+
+/** Task types whose Community templates must behave exactly like the Home
+ *  example list of that type (motion design: same OD Next route, MP4 plus
+ *  editable source). Other types keep the plugin-pinning hand-off. */
+const EXAMPLE_ROUTED_TEMPLATE_CHIPS: ReadonlySet<string> = new Set(['motion-design']);
 
 const TEMPLATE_HOME_TARGET: Record<TemplateType, Pick<CommunityTemplateUseTarget, 'chipId' | 'projectKind'>> = {
   'Prototype': { chipId: 'prototype', projectKind: 'prototype' },
@@ -37,6 +45,7 @@ const TEMPLATE_HOME_TARGET: Record<TemplateType, Pick<CommunityTemplateUseTarget
   // the Home `document` chip dispatches (see home-hero/chips.ts).
   'Document': { chipId: 'document', projectKind: 'other' },
   'Image': { chipId: 'image', projectKind: 'image' },
+  'Motion design': { chipId: 'motion-design', projectKind: 'video' },
   'Video': { chipId: 'video', projectKind: 'video' },
   'HyperFrames': { chipId: 'hyperframes', projectKind: 'video' },
   'Audio': { chipId: 'audio', projectKind: 'audio' },
@@ -46,10 +55,12 @@ const TEMPLATE_HOME_TARGET: Record<TemplateType, Pick<CommunityTemplateUseTarget
 };
 
 function templateUseTarget(template: TemplateDemo): CommunityTemplateUseTarget {
+  const homeTarget = TEMPLATE_HOME_TARGET[template.type];
   return {
     templateId: template.id,
     prompt: template.prompt,
-    ...TEMPLATE_HOME_TARGET[template.type],
+    ...homeTarget,
+    asExample: EXAMPLE_ROUTED_TEMPLATE_CHIPS.has(homeTarget.chipId),
   };
 }
 
@@ -62,6 +73,7 @@ const TEMPLATE_TYPE_ICON: Record<TemplateType, IconName> = {
   'Document': 'file-text',
   'Live Artifact': 'bar-chart-box',
   'Image': 'image',
+  'Motion design': 'video-ai',
   'Video': 'video-ai',
   'HyperFrames': 'orbit',
   'Audio': 'mic',
@@ -178,7 +190,7 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
     [plugins],
   );
   // The row's 更多 popover holds the FIXED `COMMUNITY_MORE_TYPES` list — the
-  // same tail the Home type row keeps for its overflow — not whatever kinds
+  // shared creation priority with Community's own grouping — not whatever kinds
   // the catalogue happens to carry (OPEND-3098): a kind with nothing published
   // yet keeps its entry and shows the empty state when picked. A picked
   // overflow kind is promoted to an inline pill after 图片 for as long as it is
@@ -271,6 +283,8 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
       template_key: template.id,
       template_type: template.type,
       resource_scope: templateScope(template.id),
+      use_source: 'card',
+      use_action: 'use_with_query',
       ...workspaceDimensions,
     });
     const record = pluginById.get(template.id);
@@ -311,6 +325,17 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
     setDetailsRecord(null);
     const template = templateById(record.id);
     if (!template) return;
+    trackCommunityTemplateClick(analytics.track, {
+      page_name: 'community',
+      area: 'community_templates',
+      element: 'use_prompt',
+      template_key: template.id,
+      template_type: template.type,
+      resource_scope: templateScope(template.id),
+      use_source: 'detail_modal',
+      use_action: action === 'use-with-query' ? 'use_with_query' : 'use',
+      ...workspaceDimensions,
+    });
     const target = templateUseTarget(template);
     if (onUsePlugin) {
       onUsePlugin(record, action, target);

@@ -437,6 +437,7 @@ function FileOpRow({
 export type ArtifactCardKind = Extract<ArtifactKind, 'html' | 'image' | 'video'> | 'doc';
 
 export interface ArtifactCardItem {
+  motionPreview?: import('@open-design/contracts').MotionArtifactPreview;
   /** Project-relative name; also the key passed to open / publish / export. */
   name: string;
   kind: ArtifactCardKind;
@@ -574,6 +575,11 @@ function ArtifactCard({
   // the card.
   const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
   const src = projectFileUrl(projectId, item.name, workspaceContext);
+  const liveUrl = artifactCardLiveUrl(src, item.revision);
+  const [motionSize, setMotionSize] = useState<{ src: string; width: number; height: number }>();
+  // Live HTML can have changed since this turn's snapshot. Its announced
+  // canvas only controls the inner viewport; the card's outer frame is stable.
+  const size = motionSize?.src === liveUrl ? motionSize : item.motionPreview;
   const pending = item.pending === true;
   /*
    * 图片:这一轮那张**不可变快照**才是这张卡的正文 —— 卡面、点击、导出三处都读它。
@@ -604,21 +610,19 @@ function ArtifactCard({
           <span className="artifact-card-mini is-loading">
             <PixelLiquid />
           </span>
-        ) : item.coverUrl && item.kind !== 'video' && failedCoverUrl !== item.coverUrl ? (
+        ) : item.coverUrl && item.kind !== 'video' && !item.motionPreview && failedCoverUrl !== item.coverUrl ? (
           /*
            * **当轮的静态首屏截图**(HTML / 原型 / slide / 文档)。
            *
            * 视频**不走这一支**:它的封面挂在下面那个 `<video>` 的 `poster` 上。
-           * 换成 `<img>` 会把视频卡的版式一起换掉,而版式这次不动
-           * (用户 2026-09-02:「具体的视频产物卡片样式我再问问同事」)。
+           * 保留 `<video>` 的原件预览与下载语义,在统一外框内完整缩放。
            *
            * 这是这张卡的正解:它冻结在这一轮,三天后回看这条消息,卡面还是当时
            * 那个样子。点击才去开工作区最新版本 —— 两者不一致是产品要的
            * (2026-09-02:「点击行为就是可能不一致的,预期内的」)。
            *
-           * 截图按 1440×900 抓,和卡面 16:10 同比,所以走默认的 `cover`:铺满,
-           * 不裁不留边。图片卡那条 `data-preview-fit="contain"` 是为了竖图完整
-           * 显示,首屏截图不需要,挂上去反而会在卡里留两条空边。
+           * Ordinary HTML snapshots retain their existing cover fit.
+           * Motion sources use the separate live, muted composition path below.
            */
           <img
             className="artifact-card-media"
@@ -629,7 +633,8 @@ function ArtifactCard({
           />
         ) : item.kind === 'html' ? (
           /*
-           * **没有当轮快照时的降级支** —— 旧会话、截图失败、desktop renderer 不在、
+           * Motion 视频源使用静音循环动画;其它 HTML 没有当轮快照时才降级。
+           * 旧会话、截图失败、desktop renderer 不在、
            * 配额满,都走这里:live iframe 显示**最新** html。
            *
            * 产品 2026-09-02:「各种边界情况没有当轮的快照,才是我跟你说的用 live
@@ -638,7 +643,10 @@ function ArtifactCard({
            * 文案显示在上面了?这感觉更奇怪呢」)。
            */
           <HtmlProjectCoverFrame
-            src={artifactCardLiveUrl(src, item.revision)}
+            src={liveUrl}
+            motionThumbnail
+            motionSize={size}
+            onMotionSize={(next) => setMotionSize((current) => current?.src === liveUrl && current.width === next.width && current.height === next.height ? current : { src: liveUrl, ...next })}
             initial=""
             iframeClassName="artifact-card-frame"
             glyphClassName="artifact-card-mini"
@@ -660,11 +668,12 @@ function ArtifactCard({
           </span>
         ) : item.kind === 'video' ? (
           /*
-           * `poster` 是**当轮的首帧**。没有它的时候浏览器自己去画 `src` 的第一帧
+           * `poster` 是当轮冻结的封面(Motion 使用 Agent 指定时刻,其它视频使用首帧)。
+           * 没有它的时候浏览器自己去画 `src` 的第一帧
            * —— 画的是**工作区当前那份**,所以文件一被覆盖,老消息里那张卡的首帧
            * 就跟着变了(图片卡当初那个 bug 的视频版)。
            *
-           * 元素仍然是 `<video>`:这次只接封面,不动版式。拿不到 poster 就是今天
+           * 元素仍然是 `<video>`。拿不到 poster 就是今天
            * 的行为,不出占位、不写失败文案(产品 2026-09-02)。
            */
           <video

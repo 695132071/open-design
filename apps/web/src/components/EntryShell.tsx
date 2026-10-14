@@ -1309,7 +1309,7 @@ export function EntryShell({
   function usePluginFromLibrary(
     record: InstalledPluginRecord,
     action: PluginUseAction = 'use',
-    homeType?: { chipId: string; projectKind: ProjectKind },
+    homeType?: { chipId: string; projectKind: ProjectKind; asExample?: boolean; useTracked?: boolean },
   ) {
     setHomePromptHandoff(
       createPluginUseHandoff(Date.now(), record.id, { action, ...homeType }),
@@ -2081,6 +2081,9 @@ export function EntryShell({
                   usePluginFromLibrary(record, action, {
                     chipId: target.chipId,
                     projectKind: target.projectKind,
+                    asExample: target.asExample,
+                    // Community records its own use click.
+                    useTracked: true,
                   });
                 }}
               />

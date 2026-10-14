@@ -39,6 +39,7 @@ export interface ChatArtifactSnapshotRow {
   mime: string | null;
   contentDigest: string | null;
   thumbnailDigest: string | null;
+  motionPreviewJson?: string | null;
   sourceSize: number | null;
   sourceMtime: number | null;
   expectedSize: number | null;
@@ -98,6 +99,7 @@ const SNAPSHOT_COLS = `
   mime,
   content_digest AS contentDigest,
   thumbnail_digest AS thumbnailDigest,
+  motion_preview_json AS motionPreviewJson,
   source_size AS sourceSize,
   source_mtime AS sourceMtime,
   expected_size AS expectedSize,
@@ -244,6 +246,14 @@ export function migrateChatArtifacts(db: SqliteDb): void {
       ON message_artifacts(snapshot_id);
   `);
   dropLegacyOpenPolicyColumn(db);
+  const columns = db.prepare("PRAGMA table_info(chat_artifact_snapshots)").all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'motion_preview_json')) {
+    db.exec('ALTER TABLE chat_artifact_snapshots ADD COLUMN motion_preview_json TEXT');
+  }
+}
+
+export function setSnapshotMotionPreview(db: SqliteDb, id: string, preview: import('@open-design/contracts').MotionArtifactPreview): void {
+  db.prepare('UPDATE chat_artifact_snapshots SET motion_preview_json = ? WHERE id = ?').run(JSON.stringify(preview), id);
 }
 
 /**

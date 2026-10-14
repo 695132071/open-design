@@ -79,7 +79,10 @@ import {
   localizeSkillName,
 } from '../i18n/content';
 import { readHomeGuideStage, writeHomeGuideStage } from './home-hero/firstRunGuide';
-import { curatedPluginPriorityForChip } from './plugins-home/curatedPriority';
+import {
+  CURATED_MOTION_DESIGN_PLUGIN_IDS,
+  curatedPluginPriorityForChip,
+} from './plugins-home/curatedPriority';
 import { comparePluginGalleryOrder } from './plugins-home/pluginPopularity';
 import { notifyCompletionFeedbackGesture } from '../utils/notifications';
 import { inferPluginPreview } from './plugins-home/preview';
@@ -2676,7 +2679,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
 });
 
 // The still each row leads with: the daemon-baked poster when the plugin has
-// one, otherwise a plain image-template poster. Plugins with neither (HTML-only
+// one, otherwise a bundled HTML poster or a plain image-template poster. Plugins with neither (HTML-only
 // previews) get an empty slot rather than a live iframe — the row is a label,
 // and rendering a sandboxed page per row costs far more than it is worth.
 function presetPreviewPoster(
@@ -4134,6 +4137,7 @@ function homeHeroChipDescription(chipId: string, t: ReturnType<typeof useT>): st
     case 'image': return t('homeHero.chip.imageDesc');
     case 'video': return t('homeHero.chip.videoDesc');
     case 'audio': return t('homeHero.chip.audioDesc');
+    case 'motion-design': return t('homeHero.chip.motionDesignDesc');
     case 'hyperframes': return t('homeHero.chip.hyperframesDesc');
     case 'webgl': return t('homeHero.chip.webglDesc');
     case 'live-artifact': return t('homeHero.chip.liveArtifactDesc');
@@ -4176,6 +4180,7 @@ function homeHeroChipTitle(chip: HomeHeroChip, t: ReturnType<typeof useT>): stri
     case 'video': return t('homeHero.chip.videoNext');
     case 'audio': return t('homeHero.chip.audioNext');
     case 'live-artifact': return t('homeHero.chip.liveArtifactHint');
+    case 'motion-design': return t('homeHero.chip.motionDesignHint');
     case 'hyperframes': return t('homeHero.chip.hyperframesHint');
     case 'create-brand-kit': return t('homeHero.chip.createBrandKitHint');
     case 'create-plugin': return t('homeHero.chip.createPluginHint');
@@ -4219,6 +4224,7 @@ const HOME_PRESET_PLUGIN_IDS_BY_CHIP: Partial<Record<string, readonly string[]>>
     'example-resume-modern',
     'example-invoice',
   ],
+  'motion-design': CURATED_MOTION_DESIGN_PLUGIN_IDS,
   image: [
     'image-template-vr-headset-exploded-view-poster',
     'image-template-social-media-post-psg-transfer-announcement-poster',
@@ -4358,6 +4364,8 @@ export function pluginMatchesExampleChip(record: InstalledPluginRecord, chipId: 
       return has('deck', 'slides', 'slide-deck') || hasPart('slide', 'deck');
     case 'hyperframes':
       return hasPart('hyperframes', 'hyperframe');
+    case 'motion-design':
+      return has('motion-design');
     case 'live-artifact':
       return has('live-artifact') || hasPart('live-artifact');
     case 'webgl':
@@ -4368,7 +4376,7 @@ export function pluginMatchesExampleChip(record: InstalledPluginRecord, chipId: 
     case 'image':
       return (has('image') || hasPart('image-template')) && !hasPart('video', 'audio', 'live-artifact');
     case 'video':
-      return (has('video') || hasPart('video-template')) && !hasPart('hyperframes', 'audio');
+      return (has('video') || hasPart('video-template')) && !hasPart('hyperframes', 'audio', 'motion-design');
     case 'audio':
       // Exclude video / HyperFrames templates that merely carry an
       // `audio-reactive` tag (substring-matched by hasPart('audio')): their

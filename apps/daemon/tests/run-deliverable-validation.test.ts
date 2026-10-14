@@ -459,3 +459,15 @@ describe('project deliverable validation', () => {
     })).resolves.toMatchObject({ valid: false, validation: 'project_missing' });
   });
 });
+
+
+describe('motion output facts without a planning-contract gate', () => {
+  it('recognizes nested editable source without requiring model-authored plan fields', async () => {
+    const fixture = await projectFixture({ 'motion-source/film/index.html': '<main>Editable film source</main>', 'film.mp4': 'video' });
+    expect(await validateRunDeliverable({ ...fixture, projectMetadata: { kind: 'video', intent: 'motion-design', videoModel: 'hyperframes-html' }, runStatus: 'succeeded', artifactCount: 2 })).toMatchObject({ valid: true, entryFile: 'motion-source/film/index.html' });
+  });
+  it('keeps file evidence separate from missing video export', async () => {
+    const fixture = await projectFixture({ 'index.html': '<main>Partial editable source</main>' });
+    expect((await validateRunDeliverable({ ...fixture, projectMetadata: { kind: 'video', intent: 'motion-design', videoModel: 'hyperframes-html' }, runStatus: 'succeeded', artifactCount: 1 })).valid).toBe(true);
+  });
+});

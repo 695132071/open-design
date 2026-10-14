@@ -221,6 +221,33 @@ export function inferPluginPreview(
     const audio = typeof preview.audio === 'string' ? preview.audio : null;
     const entry = typeof preview.entry === 'string' ? preview.entry : null;
 
+    if (t === 'html' && entry) {
+      // Bundled stills make new templates usable before the post-merge CDN
+      // bake. They belong to cards only; details keep the real HTML preview.
+      if (opts?.preferBaked && poster) {
+        const relative = !/^(?:[a-z][a-z\d+.-]*:|\/)/i.test(poster);
+        const posterUrl = relative
+          ? workspaceResourceUrl(
+            `/api/plugins/${encodeURIComponent(record.id)}/asset/${poster.replace(/^\.\//, '').split('/').map(encodeURIComponent).join('/')}`,
+            opts.workspaceContext,
+          )
+          : poster;
+        return {
+          kind: 'media', mediaType: 'image', poster: posterUrl,
+          videoUrl: null, audioUrl: null, imageOnly: true,
+        };
+      }
+      return {
+        kind: 'html',
+        src: workspaceResourceUrl(
+          `/api/plugins/${encodeURIComponent(record.id)}/preview`,
+          opts?.workspaceContext,
+        ),
+        label: entry.replace(/^\.\//, '').split(/[\\/]/).pop() ?? entry,
+        source: 'preview',
+      };
+    }
+
     if (t === 'video' || video) {
       const holdMs = typeof preview.holdMs === 'number' ? preview.holdMs : null;
       return {
@@ -251,17 +278,6 @@ export function inferPluginPreview(
         videoUrl: null,
         audioUrl: null,
         imageOnly: true,
-      };
-    }
-    if (t === 'html' && entry) {
-      return {
-        kind: 'html',
-        src: workspaceResourceUrl(
-          `/api/plugins/${encodeURIComponent(record.id)}/preview`,
-          opts?.workspaceContext,
-        ),
-        label: entry.replace(/^\.\//, '').split(/[\\/]/).pop() ?? entry,
-        source: 'preview',
       };
     }
   }

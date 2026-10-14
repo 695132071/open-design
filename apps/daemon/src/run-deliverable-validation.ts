@@ -283,10 +283,14 @@ async function resolveDeliverable(
   const baselineEntry = !input.independentOutput && isPrototype && input.touchedPaths
     ? safeRelativeFile(input.baselineEntryFile)
     : null;
+  const motionSources = input.projectMetadata?.intent === 'motion-design'
+    ? files.filter((file) => file.kind === 'html')
+    : [];
+  const motionSource = motionSources.length === 1 ? motionSources[0] : null;
   const selected = declared
     ? files.find((file) => filePath(file) === declared) ?? null
     : (baselineEntry ? files.find((file) => filePath(file) === baselineEntry) ?? null : null)
-      ?? inferredEntry(files, acceptedKinds);
+      ?? motionSource ?? inferredEntry(files, acceptedKinds);
   if (!selected) {
     return { valid: false, validation: 'entry_missing' };
   }

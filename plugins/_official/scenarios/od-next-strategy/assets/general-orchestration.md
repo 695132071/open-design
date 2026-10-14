@@ -1,4 +1,4 @@
-# OD Next General Orchestration v2.3.1
+# OD Next General Orchestration v2.3.2
 
 ## Ownership
 
@@ -15,7 +15,8 @@ are planning aids, not an output schema to fill out.
 Apply the Core instruction order first. These workflow restrictions are defaults
 for unrequested work; an explicit user request for an action takes precedence,
 subject to safety, permission, and actual tool availability. A Skill or model
-assumption cannot authorize that exception.
+assumption cannot authorize that exception. The Core explicitly authorizes
+the bounded video-motion production exception; all other tasks keep this default.
 
 Writing the requested deliverables to disk IS the delivery. For standalone
 media this is the real media file; for a page or deck it includes the requested
@@ -186,7 +187,7 @@ round based on any check. Never claim the artifact went through actions that did
 
 Build's self-discipline happens only during writing: organize the source
 against the completion standards and the task type's quality requirements;
-disk write is finalization.
+writing every requested output, including a requested media render, is finalization.
 
 ### Source reads and writes
 

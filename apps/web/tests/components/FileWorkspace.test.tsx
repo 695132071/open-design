@@ -1495,6 +1495,9 @@ describe('FileWorkspace launcher tab creation', () => {
       expect(retainedViewer.style.height).toBe('100%');
       expect(retainedViewer.style.opacity).toBe('0');
       expect(retainedViewer.style.visibility).toBe('');
+      // Main keeps ordinary previews warm; only Motion audio follows host visibility.
+      expect(firstFrame.getAttribute('data-od-active')).toBe('true');
+      expect(firstFrame.getAttribute('data-od-motion-active')).toBe('false');
       expect(container.querySelector('.iframe-keep-alive-pool iframe')).toBeNull();
 
       if (round === 0) {
@@ -1506,6 +1509,8 @@ describe('FileWorkspace launcher tab creation', () => {
 
       fireEvent.click(screen.getByRole('tab', { name: /artifact\.html/i }));
       expect(screen.getByTestId('artifact-preview-frame')).toBe(firstFrame);
+      expect(firstFrame.getAttribute('data-od-active')).toBe('true');
+      expect(firstFrame.getAttribute('data-od-motion-active')).toBe('true');
       expect(screen.getByTestId('retained-file-viewer')).toBe(retainedViewer);
       expect(retainedViewer.style.display).toBe('flex');
       expect(retainedViewer.style.opacity).toBe('');
