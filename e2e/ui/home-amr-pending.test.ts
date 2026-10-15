@@ -398,11 +398,22 @@ for (const planAvailable of [false, true]) {
         await expect(page.getByTestId('project-creation-pending-view')).toHaveCount(0);
         expect(create.requested()).toBe(false);
         await testInfo.attach('restored-home-memory-gate', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
-        // An old CLI/unreadable confirmation cannot strand this pending send.
+        const checked = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/workspace/billing/preflight');
         confirmation.resolve();
+        await (await checked).finished();
+        // Let the completed response settle through the renderer before checking
+        // that unknown funding did not turn into an automatic project handoff.
+        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        await expect(dialog).toBeVisible();
+        await expect(page.getByTestId('project-creation-pending-view')).toHaveCount(0);
+        expect(create.requested()).toBe(false);
+        await testInfo.attach('home-unknown-funding-stays-blocked', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+        await dialog.getByRole('button', { name: /not now|later|暂不|稍后/i }).click();
         await expect(dialog).toBeHidden();
-        await expect.poll(() => create.requested()).toBe(true);
-        await expect(page.getByTestId('project-creation-pending-view')).toBeVisible();
+        await expect(page.getByTestId('home-hero-input')).toContainText(prompt);
+        await expect(page.getByTestId('home-hero-submit')).toBeEnabled();
+        expect(create.requested()).toBe(false);
+        await testInfo.attach('home-preserved-draft-after-unknown', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
       }
     } finally {
       confirmation.resolve();

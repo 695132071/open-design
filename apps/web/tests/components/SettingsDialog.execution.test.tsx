@@ -3814,7 +3814,9 @@ describe('SettingsDialog execution settings Local CLI interactions', () => {
     expect(within(amrCard).getByRole('button', { name: 'Cancel' })).toBeTruthy();
     const callout = document.querySelector('.settings-cloud-signin-callout');
     if (!(callout instanceof HTMLElement)) throw new Error('missing cloud callout');
-    expect(within(callout).getByRole('button', { name: 'Cancel' })).toBeTruthy();
+    // Each login pill applies the shared status asynchronously; a ready card does
+    // not mean the callout has finished updating yet.
+    expect(await within(callout).findByRole('button', { name: 'Cancel' })).toBeTruthy();
   });
 
   it('cancels an in-flight AMR sign-in and returns to Authorize after a brief canceled state', async () => {

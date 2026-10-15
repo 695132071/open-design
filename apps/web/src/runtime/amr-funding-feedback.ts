@@ -45,7 +45,6 @@ export function checkAmrFundingFeedback(
   if (positive?.key === key && positive.expiresAt > Date.now()) return Promise.resolve('available');
   const existing = pending.get(key);
   if (existing) return existing;
-  if (homeBlock?.key === key) homeBlock = null;
   const request = (async (): Promise<FundingFeedback> => {
     try {
       const query = new URLSearchParams({ workspaceId: scope.workspaceId });
@@ -61,6 +60,7 @@ export function checkAmrFundingFeedback(
         preflight.workspaceMemberId !== scope.workspaceMemberId || preflight.modelId !== modelId ||
         !Number.isFinite(age) || age < -5_000 || age > 30_000) return 'unknown';
       if (preflight.fundingCheck === 'available') {
+        if (homeBlock?.key === key) homeBlock = null;
         positive = { key, expiresAt: Date.now() + 5_000 };
         return 'available';
       }

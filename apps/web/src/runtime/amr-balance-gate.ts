@@ -19,7 +19,7 @@ export const HOME_AMR_BALANCE_RETRY_DELAYS_MS = [400, 1_200] as const;
 
 /** Home may provisionally hold a known empty wallet when its scoped plan
  * reading also shows no funding. The caller must confirm asynchronously and
- * release on unknown/timeout; this projection is never run admission authority.
+ * resume only after funding is confirmed; unknown/timeout cannot submit the draft.
  * Missing plan data and available quota cannot be turned into insufficiency. */
 export function amrBalanceGateFromMemory(
   balanceUsd: string | null | undefined,

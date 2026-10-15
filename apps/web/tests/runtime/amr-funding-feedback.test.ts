@@ -113,11 +113,23 @@ describe('Home cached funding gate', () => {
     await checkAmrFundingFeedback(scope, 'model');
     expect(cachedHomeAmrFundingBlock(scope, 'model')).toBeNull();
   });
-  it('clears the old negative even if confirmation fails', async () => {
+  it('retains a fresh negative after failed confirmation without extending its lifetime', async () => {
+    vi.useFakeTimers();
     const { scope, fetchMock } = fixture('insufficient');
     await checkAmrFundingFeedback(scope, 'model');
     fetchMock.mockRejectedValueOnce(new Error('offline'));
     expect(await checkAmrFundingFeedback(scope, 'model')).toBe('unknown');
+    expect(cachedHomeAmrFundingBlock(scope, 'model')).not.toBeNull();
+    vi.advanceTimersByTime(HOME_AMR_FUNDING_CACHE_TTL_MS);
+    expect(cachedHomeAmrFundingBlock(scope, 'model')).toBeNull();
+  });
+  it('clears a previous negative when fresh funding is available, even after the positive expires', async () => {
+    vi.useFakeTimers();
+    const { scope, preflight } = fixture('insufficient');
+    await checkAmrFundingFeedback(scope, 'model');
+    preflight.fundingCheck = 'available';
+    expect(await checkAmrFundingFeedback(scope, 'model')).toBe('available');
+    vi.advanceTimersByTime(5_001);
     expect(cachedHomeAmrFundingBlock(scope, 'model')).toBeNull();
   });
   it('billing invalidation prevents an older in-flight read from restoring the block', async () => {

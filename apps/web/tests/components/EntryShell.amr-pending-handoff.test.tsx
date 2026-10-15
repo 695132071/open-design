@@ -11,7 +11,7 @@
 // behaviour (pending frame within one animation frame of the click); this
 // file pins the contract between EntryShell and App that makes it possible.
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import {
   buildWorkspacePermissions,
@@ -366,7 +366,7 @@ describe('Home memory funding gate', () => {
     const context = personalContext();
     const original = globalThis.fetch;
     let reads = 0;
-    let finishConfirmation!: (response: Response) => void;
+    let finishConfirmation!: (response: Response | Error) => void;
     const preflight = {
       schemaVersion: 1, workspaceId: context.workspaceId, workspaceMemberId: context.workspaceMemberId,
       modelId: 'default', generatedAt: new Date().toISOString(), balanceUsd: '0', fundingCheck: 'insufficient',
@@ -374,13 +374,18 @@ describe('Home memory funding gate', () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).includes('/api/workspace/billing/preflight?')) {
         reads++;
-        if (reads > 1) return new Promise<Response>((resolve) => { finishConfirmation = resolve; });
+        if (reads > 1) return new Promise<Response>((resolve, reject) => {
+          finishConfirmation = (response) => response instanceof Error ? reject(response) : resolve(response);
+        });
         return jsonResponse({ preflight });
       }
       return original(input, init);
     });
     await checkAmrFundingFeedback(context, 'default');
-    return { ...h, confirm: (fundingCheck: string) => finishConfirmation(jsonResponse({ preflight: { ...preflight, fundingCheck } })) };
+    return { ...h,
+      confirm: (fundingCheck: string) => finishConfirmation(jsonResponse({ preflight: { ...preflight, fundingCheck } })),
+      confirmResponse: (response: Response | Error) => finishConfirmation(response),
+    };
   }
 
   it('restores #8240 from the displayed wallet and plan without an independent hint', async () => {
@@ -401,8 +406,10 @@ describe('Home memory funding gate', () => {
     expect(h.onBeginProjectCreation).not.toHaveBeenCalled();
     expect(await screen.findByTestId('amr-balance-dialog')).toBeTruthy();
     expect(h.onCreateProject).not.toHaveBeenCalled();
-    finish(jsonResponse({ preflight: null }));
-    await waitFor(() => expect(h.onCreateProject).toHaveBeenCalledTimes(1));
+    await act(async () => { finish(jsonResponse({ preflight: null })); });
+    expect(screen.getByTestId('amr-balance-dialog')).toBeTruthy();
+    expect(h.onBeginProjectCreation).not.toHaveBeenCalled();
+    expect(h.onCreateProject).not.toHaveBeenCalled();
   });
 
   it('keeps a cached backend insufficient verdict on Home before any project hand-off', async () => {
@@ -420,15 +427,37 @@ describe('Home memory funding gate', () => {
     expect(screen.getByTestId('home-hero-input')).toHaveTextContent('Keep this draft on Home.');
   });
 
-  it.each(['available', 'unknown'])('releases a provisional cache block on %s confirmation', async (result) => {
+  it('releases a provisional cache block only on available confirmation', async () => {
     const h = await primeHomeFunding();
     await submitHome('Continue this draft.');
     await screen.findByTestId('amr-balance-dialog');
     expect(h.onBeginProjectCreation).not.toHaveBeenCalled();
-    h.confirm(result);
+    h.confirm('available');
     await waitFor(() => expect(h.onCreateProject).toHaveBeenCalledTimes(1));
     expect(h.calls).toEqual(['begin', 'gate', 'create']);
     expect(screen.queryByTestId('amr-balance-dialog')).toBeNull();
+  });
+
+  it.each(['unknown', 'missing', 'unavailable', 'timeout'] as const)('keeps Home blocked after %s confirmation and permits a fresh retry', async (result) => {
+    const h = await primeHomeFunding();
+    await submitHome('Keep this draft until funding is confirmed.');
+    await screen.findByTestId('amr-balance-dialog');
+    await act(async () => {
+      if (result === 'unknown') h.confirm('unknown');
+      else if (result === 'timeout') h.confirmResponse(new DOMException('Funding check timed out', 'TimeoutError'));
+      else h.confirmResponse(result === 'missing' ? jsonResponse({ preflight: null }) : new Response(null, { status: 503 }));
+    });
+    expect(screen.queryByTestId('amr-balance-dialog')).not.toBeNull();
+    expect(h.onBeginProjectCreation).not.toHaveBeenCalled();
+    expect(h.onCreateProject).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('amr-balance-dialog-dismiss'));
+    await waitFor(() => expect(screen.getByTestId('home-hero-submit')).toBeEnabled());
+    expect(screen.getByTestId('home-hero-input')).toHaveTextContent('Keep this draft until funding is confirmed.');
+    await submitHome('Keep this draft until funding is confirmed.');
+    await screen.findByTestId('amr-balance-dialog');
+    expect(h.onBeginProjectCreation).not.toHaveBeenCalled();
+    h.confirm('available');
+    await waitFor(() => expect(h.onCreateProject).toHaveBeenCalledTimes(1));
   });
 
   it('does not continue an old send after the account changes during confirmation', async () => {

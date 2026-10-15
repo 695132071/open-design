@@ -1504,11 +1504,11 @@ export function EntryShell({
             upgradeIntent: amrBalanceDialogUpgradeIntent(branch), snapshot: { ...cachedBlock, profile: amrProfile ?? cachedBlock.profile },
             modelId: amrModelId, fundingScope: scope, resolve: finish,
           });
-          // A stale negative must not strand a funded user. Unknown/offline
-          // releases this provisional gate; the gateway still owns admission.
+          // Only confirmed funding can resume this parked send. A failed read
+          // keeps the dialog open; dismissal preserves the draft for a new try.
           void checkAmrFundingFeedback(scope, amrModelId ?? null).then((result) => {
             if (identity !== homeFundingIdentityRef.current || accountGeneration !== currentWorkspaceAccountGeneration()) finish('dismiss');
-            else if (result !== 'insufficient') finish('retry');
+            else if (result === 'available') finish('retry');
           });
         });
         onAmrBalanceGateBlockChange(null);
