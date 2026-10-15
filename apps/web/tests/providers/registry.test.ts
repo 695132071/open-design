@@ -861,6 +861,126 @@ describe('fetchAppVersionInfo', () => {
   });
 });
 
+describe('fetchProjectFiles after an external write', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const file = (name: string) => ({
+    name, path: name, kind: 'image', mime: 'image/png', size: 1, mtime: 1,
+  });
+  const response = (files: ReturnType<typeof file>[]) => Response.json({ files });
+
+  it.each([0, 249])('replaces a settled forced snapshot after a write %ims later', async (elapsed) => {
+    vi.useFakeTimers();
+    const before = [file('before.png')];
+    const after = [...before, file('generated.png')];
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response(before))
+      .mockResolvedValueOnce(response(after));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchProjectFiles('post-write-settled', { fresh: true })).resolves.toEqual(before);
+    await vi.advanceTimersByTimeAsync(elapsed);
+    await expect(fetchProjectFiles('post-write-settled', {
+      fresh: true, afterChange: true, requireAuthoritative: true,
+    })).resolves.toEqual(after);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fences an older in-flight read and shares the post-write request with ordinary readers', async () => {
+    vi.useFakeTimers();
+    const before = [file('before.png')];
+    const after = [...before, file('generated.png')];
+    const oldResponse = deferred<Response>();
+    const newResponse = deferred<Response>();
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockImplementationOnce(() => oldResponse.promise)
+      .mockImplementationOnce(() => newResponse.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const earlier = fetchProjectFiles('post-write-inflight', { fresh: true });
+    await vi.advanceTimersByTimeAsync(95);
+    const completion = fetchProjectFiles('post-write-inflight', {
+      fresh: true, afterChange: true, requireAuthoritative: true,
+    });
+    const ordinary = fetchProjectFiles('post-write-inflight');
+    newResponse.resolve(response(after));
+    oldResponse.resolve(response(before));
+
+    await expect(Promise.all([earlier, completion, ordinary])).resolves.toEqual([after, after, after]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries an overtaken write-boundary read without declaring another write', async () => {
+    vi.useFakeTimers();
+    const firstFiles = [file('first.png')];
+    const latestFiles = [...firstFiles, file('second.png')];
+    const firstResponse = deferred<Response>();
+    const latestResponse = deferred<Response>();
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockImplementationOnce(() => firstResponse.promise)
+      .mockImplementationOnce(() => latestResponse.promise)
+      // A retry that mistakenly declares another write still settles, but its
+      // extra network request is rejected by the count below.
+      .mockImplementation(async () => response(latestFiles));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = fetchProjectFiles('post-write-overtaken', { fresh: true, afterChange: true });
+    await vi.advanceTimersByTimeAsync(1);
+    const second = fetchProjectFiles('post-write-overtaken', { fresh: true, afterChange: true });
+    latestResponse.resolve(response(latestFiles));
+    await Promise.resolve();
+    firstResponse.resolve(response(firstFiles));
+
+    await expect(Promise.all([first, second])).resolves.toEqual([latestFiles, latestFiles]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves ordinary and broadcast-forced concurrent read coalescing', async () => {
+    vi.useFakeTimers();
+    const files = [file('shared.png')];
+    const gate = deferred<Response>();
+    const fetchMock = vi.fn<typeof fetch>(() => gate.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const readers = [
+      fetchProjectFiles('post-write-burst', { fresh: true }),
+      fetchProjectFiles('post-write-burst', { fresh: true }),
+      fetchProjectFiles('post-write-burst'),
+    ];
+    gate.resolve(response(files));
+    await expect(Promise.all(readers)).resolves.toEqual([files, files, files]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalidates only the written project and Workspace authority', async () => {
+    vi.useFakeTimers();
+    const workspaceA = personalWorkspaceContext();
+    const workspaceB = { ...workspaceA, workspaceId: 'ws-other', workspaceMemberId: 'wm-other' };
+    const before = [file('before.png')];
+    const after = [...before, file('generated.png')];
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response(before))
+      .mockResolvedValueOnce(response(before))
+      .mockResolvedValueOnce(response(before))
+      .mockResolvedValueOnce(response(after));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchProjectFiles('post-write-scoped', { workspaceContext: workspaceA, fresh: true });
+    await fetchProjectFiles('post-write-scoped', { workspaceContext: workspaceB, fresh: true });
+    await fetchProjectFiles('post-write-other-project', { workspaceContext: workspaceA, fresh: true });
+    await expect(fetchProjectFiles('post-write-scoped', {
+      workspaceContext: workspaceA, fresh: true, afterChange: true,
+    })).resolves.toEqual(after);
+    await expect(fetchProjectFiles('post-write-scoped', { workspaceContext: workspaceB })).resolves.toEqual(before);
+    await expect(fetchProjectFiles('post-write-other-project', { workspaceContext: workspaceA })).resolves.toEqual(before);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+});
+
 describe('fetchProjectFiles', () => {
   afterEach(() => {
     vi.restoreAllMocks();

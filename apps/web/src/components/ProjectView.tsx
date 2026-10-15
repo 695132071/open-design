@@ -4570,7 +4570,7 @@ export function ProjectView({
   }, []);
 
   const refreshProjectFiles = useCallback(async (
-    options?: { fresh?: boolean },
+    options?: { fresh?: boolean; afterChange?: boolean },
     onAcceptedGeneration?: (generation: number) => void,
   ): Promise<ProjectFile[]> => {
     const requestSeq = ++projectFilesRequestSeqRef.current;
@@ -4581,6 +4581,7 @@ export function ProjectView({
         workspaceContext: projectRunWorkspaceContextRef.current,
         requireAuthoritative: true,
         ...(options?.fresh ? { fresh: true } : {}),
+        ...(options?.afterChange ? { afterChange: true } : {}),
       });
     } catch {
       // A transport/HTTP failure is not an authoritative empty directory.
@@ -7014,7 +7015,7 @@ export function ProjectView({
 
             // A terminal run's artifact paths must resolve against a post-run
             // read, not a shared file-list result cached before its last write.
-            let nextFiles = await refreshProjectFiles({ fresh: true });
+            let nextFiles = await refreshProjectFiles({ fresh: true, afterChange: true });
             const beforeFileNames = new Set(
               message.preTurnFileNames ?? nextFiles.map((f) => f.name),
             );
@@ -7546,7 +7547,7 @@ export function ProjectView({
                 const preTurn = message.preTurnFileNames;
                 // Match live completion: the terminal artifact list can be
                 // newer than the GET coalescer's last successful file read.
-                let nextFiles = await refreshProjectFiles({ fresh: true });
+                let nextFiles = await refreshProjectFiles({ fresh: true, afterChange: true });
                 let artifactPersistenceSucceeded = false;
                 let artifactPersistenceError: string | undefined;
                 // Use the turn-start snapshot when available so reload
@@ -9848,7 +9849,7 @@ export function ProjectView({
               // otherwise win the race with the file-change invalidation and
               // make this turn persist an empty producedFiles list. Completion
               // attribution needs a fresh post-run snapshot.
-              let nextFiles = await refreshProjectFiles({ fresh: true });
+              let nextFiles = await refreshProjectFiles({ fresh: true, afterChange: true });
               let artifactPersistenceSucceeded = false;
               let artifactPersistenceError: string | undefined;
               const finalText = streamedText || fullText;
@@ -10305,7 +10306,7 @@ export function ProjectView({
             ...(authoritativeArtifactPaths ?? []),
           ];
           void (async () => {
-            const nextFiles = await refreshProjectFiles({ fresh: true });
+            const nextFiles = await refreshProjectFiles({ fresh: true, afterChange: true });
             if (authoritativeArtifactPaths === undefined) return;
             const ownedFiles = attributableRunFiles(
               nextFiles, manualFileWrites, authoritativeTouchedPaths, project.id, projectDetail.resolvedDir,

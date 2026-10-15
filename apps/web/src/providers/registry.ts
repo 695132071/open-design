@@ -2144,6 +2144,8 @@ export async function fetchProjectFiles(
     signal?: AbortSignal;
     workspaceContext?: WorkspaceCollabContext | null;
     fresh?: boolean;
+    /** External writes (for example an Agent run ending) obsolete earlier reads. */
+    afterChange?: boolean;
     requireAuthoritative?: boolean;
   },
 ): Promise<ProjectFile[]> {
@@ -2153,6 +2155,11 @@ export async function fetchProjectFiles(
   // only when no reader is left awaiting it, so a foreground project read
   // can never be killed by an abandoned card scan.
   try {
+    // A semantic write boundary must advance the domain fence even when it
+    // lands inside the shared reader's identity-broadcast coalescing window.
+    if (options?.afterChange) {
+      invalidateProjectFilesCache(projectId, options.workspaceContext);
+    }
     const cacheKey = projectFilesCacheKey(projectId, options?.workspaceContext);
     const cacheGeneration = projectFilesCacheGenerations.get(cacheKey) ?? 0;
     const get = options?.fresh ? forceSharedCancellableGet : sharedCancellableGet;
@@ -2179,7 +2186,9 @@ export async function fetchProjectFiles(
           throw new Error('Project files response was malformed');
         }
         if ((projectFilesCacheGenerations.get(cacheKey) ?? 0) !== cacheGeneration) {
-          return fetchProjectFiles(projectId, options);
+          // Join the newest generation without announcing the same write
+          // again or evicting a newer boundary's already-authoritative read.
+          return fetchProjectFiles(projectId, { ...options, afterChange: false, fresh: false });
         }
         return json.files as ProjectFile[];
       },
