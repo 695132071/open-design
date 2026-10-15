@@ -1001,6 +1001,8 @@ export interface WorkspaceBillingPreflight {
   modelCovered: boolean | null;
   /** Link still checks model access, quotas, free models and auto recharge. */
   funding: 'coding_plan' | 'wallet' | 'gateway';
+  /** Fresh read-only feedback. Never use this to cancel an already running task. */
+  fundingCheck?: 'available' | 'insufficient' | 'unknown';
   codingPlan: {
     workspaceId: string;
     generatedAt: string;
@@ -1017,6 +1019,10 @@ export interface WorkspaceBillingPreflight {
       resetsAt: string | null;
     }>;
   };
+}
+
+export interface WorkspaceBillingPreflightResponse {
+  preflight: WorkspaceBillingPreflight;
 }
 
 export type WorkspaceTeamBillingPlanId = 'team_plus' | 'team_pro' | 'team_max';

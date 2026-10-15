@@ -1441,15 +1441,15 @@ describe('ProjectView conversation run isolation', () => {
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(`workspaceId=${encodeURIComponent(workspaceA.workspaceId)}`),
-      { cache: 'no-store' },
+      expect.objectContaining({ cache: 'no-store' }),
     );
     // The ambient workspace must never be consulted for a project bound to
-    // another one, and the run has to spawn under the same workspace the
-    // wallet was checked against.
+    // another one. Display billing stays scoped, but is not run admission.
     const billingUrls = fetchMock.mock.calls
       .map(([input]) => String(input))
       .filter((url) => url.includes('/api/workspace/billing'));
     expect(billingUrls.length).toBeGreaterThan(0);
+    expect(billingUrls.some((url) => url.includes('freshness=authoritative'))).toBe(false);
     expect(
       billingUrls.filter((url) =>
         url.includes(`workspaceId=${encodeURIComponent(workspaceB.workspaceId)}`),

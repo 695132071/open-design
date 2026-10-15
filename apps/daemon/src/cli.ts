@@ -7554,6 +7554,7 @@ async function runWorkspace(args) {
   od workspace projects batch-move --workspace <id> --member <id> --visibility personal|team --project <id> [--project <id> ...] [--json]
   od workspace members list --workspace <id> --member <id> [--json]
   od workspace billing [--workspace-type personal|team --workspace <id>] [--model <id>] [--json]
+  od workspace billing preflight --workspace <id> [--model <id>] [--json]
 
 Common options:
   --daemon-url <url>   OpenDesign daemon HTTP base.
@@ -7624,6 +7625,19 @@ Common options:
   // explicit CLI argument, never daemon active-workspace state: account is the
   // compatibility default; team requires both type + workspace id.
   if (area === 'billing') {
+    if (sub === 'preflight') {
+      const workspaceId = typeof flags.workspace === 'string' ? flags.workspace.trim() : '';
+      if (!workspaceId) {
+        console.error('Usage: od workspace billing preflight --workspace <id> [--model <id>] [--json]');
+        process.exit(2);
+      }
+      const query = new URLSearchParams({ workspaceId });
+      if (typeof flags.model === 'string') query.set('modelId', flags.model);
+      const data = await workspaceContextRequest(`/api/workspace/billing/preflight?${query}`);
+      if (flags.json) return process.stdout.write(JSON.stringify(data, null, 2) + '\n');
+      console.log(`Funding: ${data.preflight?.fundingCheck ?? 'unknown'} (gateway decides execution)`);
+      return;
+    }
     const workspaceType =
       typeof flags['workspace-type'] === 'string'
         ? flags['workspace-type'].trim().toLowerCase()

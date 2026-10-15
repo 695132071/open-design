@@ -1037,6 +1037,11 @@ interface QueuedSendUpdate {
   meta?: ChatSendMeta;
 }
 
+interface FoldedChatMessage extends ChatMessage {
+  /** View-only ownership of physical messages merged into this row. */
+  foldedMessageIds?: string[];
+}
+
 /**
  * Fold an OD Next logical task into ONE conversation turn.
  *
@@ -1058,11 +1063,11 @@ interface QueuedSendUpdate {
  * stamped onto the `done_key` it already emits — the very event the renderer
  * uses to find the boundary — before its events are appended.
  */
-export function foldStrategyTaskTurns(messages: ChatMessage[]): ChatMessage[] {
+export function foldStrategyTaskTurns(messages: ChatMessage[]): FoldedChatMessage[] {
   if (!messages.some((message) => (message.strategyTaskRunIndex ?? 0) > 0)) {
     return messages;
   }
-  const folded: ChatMessage[] = [];
+  const folded: FoldedChatMessage[] = [];
   const turnHeadIndexByTask = new Map<string, number>();
   for (const message of messages) {
     const taskId = message.strategyTaskExecutionId;
@@ -1096,6 +1101,7 @@ export function foldStrategyTaskTurns(messages: ChatMessage[]): ChatMessage[] {
     const separator = headContent && tailContent && !headContent.endsWith('\n') ? '\n\n' : '';
     folded[headIndex] = {
       ...head,
+      foldedMessageIds: [...(head.foldedMessageIds ?? [head.id]), message.id],
       content: tailContent
         ? `${headContent}${separator}${tailContent}`
         : headContent,
@@ -6429,19 +6435,21 @@ function isFinishedTurn(message: ChatMessage): boolean {
 function archiveLowBalanceTurnCard(
   archive: Map<string, number>,
   input: {
-    messages: ChatMessage[];
+    messages: FoldedChatMessage[];
     anchorMessageId: string | null | undefined;
     balanceUsd: number | null | undefined;
   },
 ): void {
   const { anchorMessageId, balanceUsd } = input;
   if (!anchorMessageId || balanceUsd == null) return;
-  const anchor = input.messages.find((message) => message.id === anchorMessageId);
+  const anchor = input.messages.find((message) =>
+    message.id === anchorMessageId || message.foldedMessageIds?.includes(anchorMessageId),
+  );
   // 锚点不在这条会话里 = 切走了 / 那一轮被收回了。既然挂不上去,就不画 ——
   // 退回流水末尾会把一份别的会话的读数扣在这条会话的最后一轮头上。
   if (!anchor || anchor.role !== 'assistant') return;
   if (!isFinishedTurn(anchor)) return;
-  archive.set(anchorMessageId, balanceUsd);
+  archive.set(anchor.id, balanceUsd);
 }
 
 /**

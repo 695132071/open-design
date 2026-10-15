@@ -1311,11 +1311,11 @@ async function wireTeamRunBalanceFixtures(
 ): Promise<{
   personalWalletRequests: () => number;
   resetBalanceRequests: () => void;
-  teamBillingRequests: () => number;
   teamBillingQueries: () => Array<Record<string, string | null>>;
+  fundingQueries: () => Array<Record<string, string | null>>;
 }> {
   let personalWalletRequestCount = 0;
-  let teamBillingRequestCount = 0;
+  const fundingQueries: Array<Record<string, string | null>> = [];
   const teamBillingQueries: Array<Record<string, string | null>> = [];
   await page.route('**/api/app-config', async (route) => {
     if (route.request().method() !== 'GET') {
@@ -1419,8 +1419,12 @@ async function wireTeamRunBalanceFixtures(
       });
       return;
     }
+    if (pathname === '/api/workspace/billing/preflight') {
+      fundingQueries.push({ workspaceId: url.searchParams.get('workspaceId'), modelId: url.searchParams.get('modelId') });
+      await route.fulfill({ json: { preflight: null } });
+      return;
+    }
     if (pathname === '/api/workspace/billing') {
-      teamBillingRequestCount += 1;
       const query = {
         scope: url.searchParams.get('scope'),
         workspaceId: url.searchParams.get('workspaceId'),
@@ -1485,11 +1489,11 @@ async function wireTeamRunBalanceFixtures(
     personalWalletRequests: () => personalWalletRequestCount,
     resetBalanceRequests: () => {
       personalWalletRequestCount = 0;
-      teamBillingRequestCount = 0;
       teamBillingQueries.length = 0;
+      fundingQueries.length = 0;
     },
-    teamBillingRequests: () => teamBillingRequestCount,
     teamBillingQueries: () => [...teamBillingQueries],
+    fundingQueries: () => [...fundingQueries],
   };
 }
 
@@ -1629,16 +1633,20 @@ test('[P0] Team project send keeps exact Team run scope through project bootstra
   // Run scope is an HTTP authority header contract. The daemon intentionally
   // does not duplicate this mutable principal into ChatRequest JSON.
   expect(runBodies[0]?.currentPrompt).toBe(prompt);
-  expect(balanceRequests.teamBillingRequests()).toBeGreaterThanOrEqual(1);
+  // Send-time feedback has its own endpoint; display billing is no longer
+  // an admission prerequisite. Both read paths must retain the Team scope.
+  await expect.poll(() => balanceRequests.fundingQueries().length).toBe(1);
+  expect(balanceRequests.fundingQueries()).toEqual([{
+    workspaceId: TEAM_RUN_CONTEXT.workspaceId, modelId: 'claude-sonnet-4-5',
+  }]);
   const teamBillingQueries = balanceRequests.teamBillingQueries();
-  expect(teamBillingQueries.length).toBeGreaterThanOrEqual(1);
   for (const query of teamBillingQueries) {
     expect(query.scope).toBe('workspace');
     expect(query.workspaceId).toBe(TEAM_RUN_CONTEXT.workspaceId);
     expect([null, 'authoritative']).toContain(query.freshness);
   }
-  expect(teamBillingQueries.some((query) => query.freshness === 'authoritative')).toBe(true);
-  // Team preflight reads the account snapshot once for signed-in identity
+  expect(teamBillingQueries.some((query) => query.freshness === 'authoritative')).toBe(false);
+  // The sign-in check reads the account snapshot once for identity
   // metadata only; Personal $0 is not the balance oracle and cannot veto the
   // Team-funded run proved above.
   expect(balanceRequests.personalWalletRequests()).toBe(1);
@@ -1713,15 +1721,19 @@ test('[P0] Team project balance gate ignores funded Personal wallet and still se
   );
   expect(runBodies[0]?.currentPrompt).toBe(prompt);
   await expect(page.getByTestId('amr-balance-dialog')).toHaveCount(0);
-  expect(balanceRequests.teamBillingRequests()).toBeGreaterThanOrEqual(1);
+  // Send-time feedback has its own endpoint; display billing is no longer
+  // an admission prerequisite. Both read paths must retain the Team scope.
+  await expect.poll(() => balanceRequests.fundingQueries().length).toBe(1);
+  expect(balanceRequests.fundingQueries()).toEqual([{
+    workspaceId: TEAM_RUN_CONTEXT.workspaceId, modelId: 'claude-sonnet-4-5',
+  }]);
   const teamBillingQueries = balanceRequests.teamBillingQueries();
-  expect(teamBillingQueries.length).toBeGreaterThanOrEqual(1);
   for (const query of teamBillingQueries) {
     expect(query.scope).toBe('workspace');
     expect(query.workspaceId).toBe(TEAM_RUN_CONTEXT.workspaceId);
     expect([null, 'authoritative']).toContain(query.freshness);
   }
-  expect(teamBillingQueries.some((query) => query.freshness === 'authoritative')).toBe(true);
+  expect(teamBillingQueries.some((query) => query.freshness === 'authoritative')).toBe(false);
   // Personal $99.97 is identity metadata only; Team $0 is not a client block.
   expect(balanceRequests.personalWalletRequests()).toBe(1);
 });
