@@ -16983,6 +16983,7 @@ export async function startServer({
               service: internalRunCreation,
               task: strategyTaskAtStart,
               parsed: strategyProtocolResult,
+              locale: typeof locale === 'string' ? locale : undefined,
               completionEvidence: {
                 physicalStatus: 'succeeded', deliverableValid,
                 truncated: run.truncatedMidTurn === true,
@@ -17017,13 +17018,14 @@ export async function startServer({
                 };
                 automaticContinuationChatBody = {
                   ...meta,
+                  // The frozen task/source/index identify this internal request.
+                  // A fresh host-protocol nonce must not change its retry identity.
                   requestFingerprint: createHash('sha256')
                     .update(JSON.stringify({
                       taskExecutionId: strategyTaskAtStart.taskExecutionId,
                       sourceRunId: run.id,
                       stage,
                       taskRunIndex,
-                      instruction,
                       projectId: meta.projectId,
                       conversationId: meta.conversationId,
                       agentId: meta.agentId,

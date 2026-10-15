@@ -23,11 +23,13 @@ describe('chat turn host protocol', () => {
     expect(result.nextSteps).toBe('');
     expect(result.artifactFocus).toBe('');
   });
-  it('gates production markers on completed Production and emits nothing without a key', () => {
+  it('describes production completion without requiring retired model state declarations', () => {
     const result = renderChatTurnHostProtocolInstructions(KEY, 'od_next_production');
 
-    expect(result.text).toContain('inputStage=production');
-    expect(result.text).toContain('outcome=completed');
+    expect(result.text).not.toContain('response declares');
+    expect(result.text).not.toContain('inputStage=');
+    expect(result.text).not.toContain('outcome=');
+    expect(result.text).toContain('omit all three protocols');
     expect(result.text).toContain(`<od-next key="${KEY}" value="Add an orders list page"/>`);
     expect(renderChatTurnHostProtocolInstructions('', 'od_next_production')).toEqual({
       doneMarker: '',

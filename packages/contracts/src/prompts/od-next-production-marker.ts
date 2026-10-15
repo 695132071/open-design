@@ -55,9 +55,10 @@ answers, and already completed direct edits. Do not explain the control line.`;
 export function composeOdNextMarkerProductionTurn(input: {
   taskExecutionId: string;
   taskRunIndex: number;
+  hostProtocolText: string;
 }): string {
   return serializeOdNextRequestTurnV1({
-    ...input, stage: 'production',
+    taskExecutionId: input.taskExecutionId, taskRunIndex: input.taskRunIndex, stage: 'production',
     payload: `Continue the current session and execute the plan from the preceding
 response within the user's latest explicit requirements and exclusions.
 If the user asked only for a plan, the preceding plan or continuation instruction
@@ -70,6 +71,8 @@ native subagents only when useful and supported. No structured plan, capability
 proof, Runtime State, or hash is required. Do not emit od-production-ready again.
 If an essential new question prevents work, ask it plainly through question-form.
 Finish with a concise description of files actually produced and any remaining
-gaps. Never claim that a plan, a tool invocation, or an absent file is delivery.`,
+gaps. Never claim that a plan, a tool invocation, or an absent file is delivery.
+
+${input.hostProtocolText}`,
   });
 }

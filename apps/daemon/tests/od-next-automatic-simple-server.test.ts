@@ -48,6 +48,7 @@ import {
   upsertInstalledPlugin,
 } from '../src/plugins/registry.js';
 import { startServer } from '../src/server.js';
+import * as automaticProduction from '../src/strategies/od-next/automatic-simple-production.js';
 import {
   getStrategyTaskExecution
 } from '../src/strategies/task-store.js';
@@ -109,6 +110,7 @@ type Invocation = {
 };
 
 const THREAD_ID = '019fffaa-0000-7000-8000-000000000010';
+const PRODUCTION_FOLLOW_UP_SUGGESTIONS = ['完善落地页的移动端布局', '为演示文稿添加目录页', '统一页面与演示文稿的配色'];
 const execFileP = promisify(execFile);
 const DAEMON_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_ROOT = path.resolve(DAEMON_ROOT, '../..');
@@ -677,9 +679,33 @@ process.exit(127);
   // the packaged child environment allowlist carries no `OD_NEXT_*` key.
   it('marker protocol automatically resumes Codex once and preserves files despite a missing canonical entry', async () => {
     const fixture = await createPublicRolloutFixture('marker-production', 'design');
+    await verifyProductionHostProtocol(fixture, 'marker-production');
+  });
+
+  it('marker protocol persists production follow-up suggestions with the current run key', async () => {
+    const fixture = await createPublicRolloutFixture('marker-production-suggestions', 'design');
+    await verifyProductionHostProtocol(fixture, 'marker-production-suggestions');
+  });
+
+  async function verifyProductionHostProtocol(
+    fixture: Awaited<ReturnType<typeof createPublicRolloutFixture>>,
+    label: string,
+  ) {
+    const prepareContinuation = automaticProduction.prepareAutomaticStrategyContinuation;
+    let repeatPreparation: (() => ReturnType<typeof prepareContinuation>) | undefined;
+    vi.spyOn(automaticProduction, 'prepareAutomaticStrategyContinuation').mockImplementation(input => {
+      const first = prepareContinuation(input);
+      if (first.start) {
+        // Replay the real server callback after delivery: invoking createMeta
+        // again before start would overwrite its pending chat body. A fresh
+        // host nonce must still reuse the original physical Run and prompt.
+        repeatPreparation = () => prepareContinuation(input);
+      }
+      return first;
+    });
     started = fixture.started; binDir = fixture.binDir;
     process.env.OD_NEXT_STRATEGY_LOCAL_SYNTHETIC_CANARY = '1';
-    const created = await postRun(started.url, publicRunRequest(fixture, 'Create a landing page and a presentation.', 'marker-production'));
+    const created = await postRun(started.url, publicRunRequest(fixture, 'Create a landing page and a presentation.', label));
     const request = await waitForRunTerminal(started.url, created.runId as string);
     expect(request.status, JSON.stringify(request)).toBe('succeeded');
     const task = await waitForTask(created.strategyTask!.taskExecutionId, 'completed');
@@ -688,18 +714,45 @@ process.exit(127);
     const production = await waitForRunTerminal(started.url, task.latestRunId);
     expect(production.status).toBe('succeeded');
     expect(production.strategyTask).toMatchObject({ outcome: 'completed', terminal: true, deliverableValid: false });
+    expect(repeatPreparation).toBeTypeOf('function');
+    const repeated = repeatPreparation!();
+    expect(repeated.start).toBe(false);
+    expect(repeated.prepared?.kind).toBe('reused');
+    expect(repeated.prepared?.run.id).toBe(task.latestRunId);
     const invocations = await readProjectInvocations(fixture.logPath, fixture.projectId);
     expect(invocations).toHaveLength(2);
     expect(invocations[1]!.argv).toContain('resume');
     expect(invocations[1]!.stdin).toContain('This is the production turn');
     expect(invocations[1]!.stdin).not.toContain('planContractHash=');
+    const events = (await readFile(production.eventsLogPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    const doneKeys = events.filter(event => event.event === 'agent' && event.data?.type === 'done_key');
+    expect(doneKeys).toHaveLength(1);
+    const productionKey = doneKeys[0]!.data.key;
+    expect(productionKey).toMatch(/^[a-f0-9]{16}$/);
+    expect(invocations[1]!.stdin).toContain(`<od-done key="${productionKey}"/>`);
+    expect(invocations[1]!.stdin).toContain(`<od-next key="${productionKey}" value=`);
+    expect(invocations[1]!.stdin).toContain(`<od-focus key="${productionKey}"`);
+    const suggestionsExpected = label === 'marker-production-suggestions';
+    const suggestions = events.filter(event => event.event === 'agent' && event.data?.type === 'next_steps');
+    // Suggestions are optional display hints, not a completion requirement.
+    expect(suggestions.map(event => event.data.suggestions)).toEqual(suggestionsExpected ? [PRODUCTION_FOLLOW_UP_SUGGESTIONS] : []);
+    const visibleText = events
+      .filter(event => event.event === 'agent' && event.data?.type === 'text_delta')
+      .map(event => event.data.delta).join('');
+    expect(visibleText).not.toContain('<od-next');
     expect(await readFile(path.join(invocations[1]!.cwd, 'landing.html'), 'utf8')).toContain('Landing');
     expect(await readFile(path.join(invocations[1]!.cwd, 'deck.html'), 'utf8')).toContain('Deck');
     const response = await fetch(`${started.url}/api/projects/${fixture.projectId}/conversations/${fixture.conversationId}/messages`);
-    const history = await response.json() as { messages: Array<{ content: string; strategyTaskDelivered?: boolean }> };
+    const history = await response.json() as {
+      messages: Array<{ content: string; strategyTaskDelivered?: boolean; events?: Array<{ kind: string; suggestions?: string[] }> }>;
+    };
     expect(JSON.stringify(history)).not.toContain('od-production-ready');
+    expect(JSON.stringify(history)).not.toContain('<od-next');
+    const persistedSuggestions = history.messages.flatMap(message => (message.events ?? [])
+      .filter(event => event.kind === 'next_steps').map(event => event.suggestions));
+    expect(persistedSuggestions).toEqual(suggestionsExpected ? [PRODUCTION_FOLLOW_UP_SUGGESTIONS] : []);
     expect(history.messages.some(message => message.strategyTaskDelivered)).toBe(false);
-  });
+  }
 
   it.each(['missing-session', 'expired-session'] as const)('marker production cold-starts with its plan when %s', async mode => {
     const fixture = await createPublicRolloutFixture(`marker-${mode}`, 'design');
@@ -3005,11 +3058,17 @@ process.stdin.on('end', () => {
       if (!key) throw new Error('Current host marker key was not injected');
       text = 'Plan: deliver a standalone dog image only.\\n<od-production-ready key="' + key + '" />';
     }
-  } else if (['marker-production', 'marker-missing-session', 'marker-expired-session', 'marker-expired-side-effect', 'marker-tool-split'].includes(${JSON.stringify(label)})) {
+  } else if (['marker-production', 'marker-production-suggestions', 'marker-missing-session', 'marker-expired-session', 'marker-expired-side-effect', 'marker-tool-split'].includes(${JSON.stringify(label)})) {
     if (stdin.includes('This is the production turn')) {
       fs.writeFileSync('landing.html', '<!doctype html><html><body>Landing</body></html>');
       fs.writeFileSync('deck.html', '<!doctype html><html><body>Deck</body></html>');
       text = 'Wrote landing.html and deck.html.\\n<open-design-runtime-state>\\n{broken}\\n</open-design-runtime-state>';
+      if (${JSON.stringify(label)} === 'marker-production-suggestions') {
+        const key = /<od-next key="([a-f0-9]+)"/.exec(stdin)?.[1];
+        if (!key) throw new Error('Current next-step marker key was not injected');
+        text += '\\n' + ${JSON.stringify(PRODUCTION_FOLLOW_UP_SUGGESTIONS)}
+          .map(value => '<od-next key="' + key + '" value="' + value + '"/>').join('\\n');
+      }
     } else {
       const key = /<od-production-ready key="([a-f0-9]+)"/.exec(stdin)?.[1];
       if (!key) throw new Error('Current host marker key was not injected');

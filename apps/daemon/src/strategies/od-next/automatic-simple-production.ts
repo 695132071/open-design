@@ -98,6 +98,7 @@ export function prepareAutomaticStrategyContinuation<TMeta extends InternalRunCr
   parsed: OdNextReply;
   createMeta: (stage: 'production', instruction: string, taskRunIndex: number) => TMeta;
   completionEvidence?: MarkerCompletionEvidence;
+  locale?: string | undefined;
   updatedAt?: number;
 }): PreparedAutomaticStrategyContinuation<TRun> {
   return prepareMarkerContinuation(input);

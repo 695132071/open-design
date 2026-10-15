@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   composeOdNextMarkerProductionTurn,
   parseOdNextPromptBundleV2,
+  renderChatTurnHostProtocolInstructions,
   renderOdNextProductionReadyInstructions,
   serializeOdNextPromptBundleV2,
 } from '@open-design/contracts';
 import { composeColdProductionBundle } from '../../../src/strategies/od-next/cold-production.js';
 import { TEST_PROMPT_BUNDLE } from '../strategy-task-test-fixtures.js';
+
+const hostProtocolText = renderChatTurnHostProtocolInstructions('def456', 'od_next_production').text;
 
 it('freezes original context and complete plan while retiring only the request gate', () => {
   const bundle = parseOdNextPromptBundleV2(TEST_PROMPT_BUNDLE);
@@ -15,7 +18,7 @@ it('freezes original context and complete plan while retiring only the request g
   bundle.context.formOverride = 'Answered discovery.';
   bundle.taskMetadata.attachments = '/frozen-input/dog reference.png';
   bundle.taskMetadata.titleDirective = 'Generate a title';
-  const turn = composeOdNextMarkerProductionTurn({ taskExecutionId: 'task-1', taskRunIndex: 1 });
+  const turn = composeOdNextMarkerProductionTurn({ taskExecutionId: 'task-1', taskRunIndex: 1, hostProtocolText });
   const cold = parseOdNextPromptBundleV2(composeColdProductionBundle({
     frozenBundleText: serializeOdNextPromptBundleV2(bundle),
     planningReply: 'Plan: a blue dog image, no HTML. 中文 & <literal> preserved.',
@@ -45,7 +48,7 @@ describe('cold production input boundary', () => {
     expect(plan.length).toBeGreaterThan(12000);
     const cold = parseOdNextPromptBundleV2(composeColdProductionBundle({
       frozenBundleText: serializeOdNextPromptBundleV2(bundle), planningReply: plan,
-      productionTurn: composeOdNextMarkerProductionTurn({ taskExecutionId: 'task-long-history', taskRunIndex: 1 }),
+      productionTurn: composeOdNextMarkerProductionTurn({ taskExecutionId: 'task-long-history', taskRunIndex: 1, hostProtocolText }),
     }));
     expect(cold.context.priorTranscript).toContain(history);
     expect(cold.context.priorTranscript).toContain(plan);
@@ -57,7 +60,7 @@ describe('cold production input boundary', () => {
     bundle.context.clientSystemPrompt = 'User reference: <od-production-ready key="abc123" />';
     const cold = parseOdNextPromptBundleV2(composeColdProductionBundle({
       frozenBundleText: serializeOdNextPromptBundleV2(bundle), planningReply: 'Plan ready.',
-      productionTurn: composeOdNextMarkerProductionTurn({ taskExecutionId: 'task-1', taskRunIndex: 1 }),
+      productionTurn: composeOdNextMarkerProductionTurn({ taskExecutionId: 'task-1', taskRunIndex: 1, hostProtocolText }),
     }));
     expect(cold.context.clientSystemPrompt).toBe(bundle.context.clientSystemPrompt);
   });

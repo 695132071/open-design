@@ -12,6 +12,7 @@ import {
 
 import { composeSystemPrompt } from '../src/prompts/system.js';
 import { composeOdNextMarkerProductionTurn } from '../src/prompts/od-next-production-marker.js';
+import { renderChatTurnHostProtocolInstructions } from '../src/prompts/chat-turn-host-protocol.js';
 
 const A = 'a'.repeat(64);
 const B = 'b'.repeat(64);
@@ -487,6 +488,7 @@ describe('OD Next V2 prompt recipe', () => {
     const bundle = composeOdNextStrategyBundleHeadV2(recipe);
     const production = composeOdNextMarkerProductionTurn({
       taskExecutionId: 'task-1', taskRunIndex: 1,
+      hostProtocolText: renderChatTurnHostProtocolInstructions('abc123', 'od_next_production').text,
     });
 
     expect(stableContext).toContain(context.memoryBody);

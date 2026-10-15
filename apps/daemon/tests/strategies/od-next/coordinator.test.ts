@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { strategyPackageHashFromDigests } from '@open-design/plugin-runtime';
-import { OD_NEXT_PROMPT_BUNDLE_SCHEMA_V2, serializeCanonicalXml, StrategyTaskProjectionV2Schema } from '@open-design/contracts';
+import { OD_NEXT_PROMPT_BUNDLE_SCHEMA_V2, parseOdNextPromptBundleV2, serializeCanonicalXml, StrategyTaskProjectionV2Schema } from '@open-design/contracts';
 import type { AppliedPluginSnapshot, OpenDesignPlanContractV2 } from '@open-design/contracts';
 import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -241,6 +241,40 @@ describe('OD Next planning coordinator', () => {
     const stream = createOdNextRunProtocol(null, '5e819e50c013db87');
     stream.push(text); return stream.finish().parsed;
   }
+
+  it('persists the production run key and localized host protocol in both resume and cold input', () => {
+    const { task, service } = markerHarness();
+    let productionMeta: InternalRunCreateInput | undefined;
+    const prepare = service.prepare;
+    vi.spyOn(service, 'prepare').mockImplementation(input => {
+      productionMeta = input.meta;
+      return prepare(input);
+    });
+    const continued = prepareAutomaticStrategyContinuation({
+      db, service, task, parsed: markerReply(`Build the requested page.\n${productionMarker}`),
+      locale: 'zh-CN',
+      createMeta: (_stage, instruction) => ({ message: instruction }),
+      completionEvidence: { physicalStatus: 'succeeded', deliverableValid: false },
+    });
+    expect(continued.start).toBe(true);
+    const key = productionMeta?.doneKey;
+    expect(key).toMatch(/^[a-f0-9]{16}$/);
+    expect(key).not.toBe('5e819e50c013db87');
+    const persisted = getStrategyTaskExecution(db, task.taskExecutionId)!.runs.at(-1)!;
+    const resume = persisted.finalText.text;
+    const cold = parseOdNextPromptBundleV2(persisted.coldStartFinalText!.text).userFirstPrompt;
+    expect(productionMeta?.message).toBe(resume);
+    for (const text of [resume, cold]) {
+      expect(text).toContain(`<od-done key="${key}"/>`);
+      expect(text).toContain(`<od-next key="${key}"`);
+      expect(text).toContain(`<od-focus key="${key}"`);
+      expect(text).toContain('Simplified Chinese');
+      expect(text).toContain('`zh-CN`');
+      expect(text).not.toContain('inputStage=');
+      expect(text).not.toContain('outcome=');
+      expect(text).not.toContain('od-production-ready key=');
+    }
+  });
 
   it.each([
     `Build a landing page and a deck.\n${productionMarker}`,

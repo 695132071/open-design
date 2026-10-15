@@ -1,7 +1,7 @@
 import { composeColdProductionBundle } from './cold-production.js';
 import type { MarkerCompletionEvidence } from './marker-settlement.js';
 import type { OdNextReply } from './protocol.js';
-import { composeOdNextMarkerProductionTurn } from '@open-design/contracts';
+import { composeOdNextMarkerProductionTurn, renderChatTurnHostProtocolInstructions } from '@open-design/contracts';
 import type Database from 'better-sqlite3';
 import type { InternalPhysicalRun, InternalRunCreateInput, InternalRunCreationService } from '../../services/internal-run-service.js';
 import { mintRunDoneKey } from '../../runtimes/run-done-key.js';
@@ -19,6 +19,7 @@ export function prepareMarkerContinuation<TMeta extends InternalRunCreateInput, 
   parsed: OdNextReply;
   createMeta: (stage: 'production', instruction: string, taskRunIndex: number) => TMeta;
   completionEvidence?: MarkerCompletionEvidence;
+  locale?: string | undefined;
   updatedAt?: number;
 }): PreparedAutomaticStrategyContinuation<TRun> {
   const settle = () => settleMarkerTurn(input.db, {
@@ -30,14 +31,16 @@ export function prepareMarkerContinuation<TMeta extends InternalRunCreateInput, 
   if (input.completionEvidence?.physicalStatus !== 'succeeded' || !markerMayContinue(input.task, input.parsed)) {
     return { result: settle(), start: false };
   }
+  const doneKey = mintRunDoneKey();
   const instruction = composeOdNextMarkerProductionTurn({
     taskExecutionId: input.task.taskExecutionId, taskRunIndex: input.task.runs.length,
+    hostProtocolText: renderChatTurnHostProtocolInstructions(doneKey, 'od_next_production', input.locale).text,
   });
   const coldStartText = composeColdProductionBundle({
     frozenBundleText: input.task.promptBundle.text, planningReply: input.parsed.visibleText, productionTurn: instruction,
   });
   const meta = input.createMeta('production', instruction, input.task.runs.length);
-  meta.doneKey = mintRunDoneKey();
+  meta.doneKey = doneKey;
   let result: OdNextCoordinatorResult | undefined;
   const prepared = input.service.prepare({
     meta,
