@@ -305,10 +305,41 @@ test('[P1] local-agent send from Home still enters the pending frame within a fr
   await expect(pending).toBeHidden({ timeout: T.medium });
 });
 
-test('[P0] cached backend insufficiency stays on Home and dismiss preserves the draft', async ({ page }, testInfo) => {
+test('[P0] funding confirmation only updates the cache and billing events expire it without auto-send', async ({ page }, testInfo) => {
+  // This case exercises event invalidation, not TTL expiry during slow UI steps.
+  const generatedAt = new Date().toISOString();
+  await page.clock.setFixedTime(generatedAt);
   await wireSignedInAmrHome(page, { accountBalanceUsd: '0.00' });
   const create = await holdProjectCreate(page);
   const confirmation = deferred();
+  const billingEvent = deferred();
+  const { workspaceId, workspaceMemberId } = AMR_PERSONAL_WORKSPACE_CONTEXT;
+  await routeSuccessfulRuns(page, { runId: 'home-funding-cache-event-run' });
+  await page.route('**/api/workspace/billing?**', async (route) => {
+    await route.fulfill({ json: {
+      summary: null,
+      workspaceBalance: { workspaceId, workspaceMemberId, balanceUsd: '0', billingScopeVersion: 2, updatedAt: generatedAt, expiresAt: null },
+      preflight: {
+        schemaVersion: 1, workspaceId, workspaceMemberId, modelId: null, generatedAt,
+        balanceUsd: '0', funding: 'gateway', modelCovered: null,
+        codingPlan: { workspaceId, generatedAt, eligible: false, tier: null, windows: [] },
+      },
+    } });
+  });
+  let billingEventsDelivered = false;
+  await page.route('**/api/workspace/events?**', async (route) => {
+    await billingEvent.promise;
+    // A finite SSE response reconnects. Do not replay the same changes and
+    // invalidate the new positive hint again before the user's next click.
+    if (billingEventsDelivered) {
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    billingEventsDelivered = true;
+    await route.fulfill({ contentType: 'text/event-stream', body: Array.from({ length: 8 }, (_, i) =>
+      `event: wallet-balance-changed\ndata: ${JSON.stringify({ type: 'wallet-balance-changed', workspaceId, workspaceMemberId, revision: String(i + 1) })}\n\n`,
+    ).join('') });
+  });
   let hintReads = 0;
   let sending = false;
   const warmed = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?') && new URL(response.url()).searchParams.get('modelId') === 'glm-5' && response.ok());
@@ -320,7 +351,7 @@ test('[P0] cached backend insufficiency stays on Home and dismiss preserves the 
     await route.fulfill({ json: { preflight: {
       schemaVersion: 1, workspaceId: url.searchParams.get('workspaceId'),
       workspaceMemberId: AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceMemberId,
-      modelId: url.searchParams.get('modelId'), generatedAt: new Date().toISOString(), balanceUsd: '0',
+      modelId: url.searchParams.get('modelId'), generatedAt, balanceUsd: '0',
       fundingCheck: confirming ? 'available' : 'insufficient',
     } } });
   });
@@ -338,16 +369,156 @@ test('[P0] cached backend insufficiency stays on Home and dismiss preserves the 
     expect(create.requested()).toBe(false);
     await expect.poll(() => hintReads).toBe(warmReads + 1);
     await testInfo.attach('home-cached-funding-block', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
-    await dialog.getByRole('button', { name: /not now|later|暂不|稍后/i }).click();
     const confirmed = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?'));
     confirmation.resolve();
-    await confirmed;
-    await expect(dialog).toBeHidden();
-    await expect(page.getByTestId('home-hero-input')).toHaveText(prompt);
-    await expect(page.getByTestId('home-hero-submit')).toBeEnabled();
+    await (await confirmed).finished();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    await expect(dialog).toBeVisible();
     expect(create.requested()).toBe(false);
+    await testInfo.attach('home-available-confirmation-stays-blocked', { body: await page.screenshot({ animations: 'disabled' }), contentType: 'image/png' });
+
+    // The existing SSE billing subscriber reads the projection after the event;
+    // the Home hint subscriber only expires memory, with no extra funding read.
+    const billingRefreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/workspace/billing');
+    billingEvent.resolve();
+    await (await billingRefreshed).finished();
+    expect(hintReads).toBe(warmReads + 1);
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: /not now|later|暂不|稍后/i }).click();
+    await expect(page.getByTestId('home-hero-input')).toHaveText(prompt);
+    // The event invalidated the positive hint, so this explicit send rechecks.
+    const rechecked = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?'));
+    await sendFromHome(page, prompt);
+    await (await rechecked).finished();
+    await expect(dialog).toBeVisible();
+    expect(hintReads).toBe(warmReads + 2);
+    expect(create.requested()).toBe(false);
+    await dialog.getByRole('button', { name: /not now|later|暂不|稍后/i }).click();
+    await expect(page.getByTestId('home-hero-submit')).toBeEnabled();
+    // The new positive hint is consumed only by a new user send.
+    await sendFromHome(page, prompt);
+    await expect.poll(() => create.requested(), { timeout: T.medium }).toBe(true);
   } finally {
     confirmation.resolve();
+    billingEvent.resolve();
+    create.release();
+  }
+});
+
+test('[P0] a billing refresh recovers blocked Home funding without another send', async ({ page }, testInfo) => {
+  const generatedAt = new Date().toISOString();
+  await page.clock.setFixedTime(generatedAt);
+  await wireSignedInAmrHome(page, { accountBalanceUsd: '0.00' });
+  const create = await holdProjectCreate(page);
+  const runs = await routeSuccessfulRuns(page, { runId: 'home-funding-auto-refresh-run' });
+  const billingEvent = deferred();
+  const { workspaceId, workspaceMemberId } = AMR_PERSONAL_WORKSPACE_CONTEXT;
+  let available = false;
+  let hintReads = 0;
+  let delivered = false;
+  await page.route('**/api/workspace/events?**', async (route) => {
+    await billingEvent.promise;
+    if (delivered) return route.fulfill({ status: 204 });
+    delivered = true;
+    await route.fulfill({ contentType: 'text/event-stream', body: Array.from({ length: 8 }, (_, i) =>
+      `event: wallet-balance-changed\ndata: ${JSON.stringify({ type: 'wallet-balance-changed', workspaceId, workspaceMemberId, revision: String(i + 1) })}\n\n`,
+    ).join('') });
+  });
+  await page.route('**/api/workspace/billing/preflight?**', async (route) => {
+    hintReads++;
+    const url = new URL(route.request().url());
+    await route.fulfill({ json: { preflight: { schemaVersion: 1, workspaceId, workspaceMemberId,
+      modelId: url.searchParams.get('modelId'), generatedAt, balanceUsd: available ? '10' : '0',
+      fundingCheck: available ? 'available' : 'insufficient' } } });
+  });
+  const warmed = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?')
+    && new URL(response.url()).searchParams.get('modelId') === 'glm-5');
+  try {
+    await gotoEntryHome(page);
+    await (await warmed).finished();
+    const checked = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?'));
+    await sendFromHome(page, 'Recover after external recharge without resubmitting.');
+    await (await checked).finished();
+    const dialog = page.getByTestId('amr-balance-dialog');
+    await expect(dialog).toBeVisible();
+    available = true;
+    const recovered = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?'));
+    billingEvent.resolve();
+    await (await recovered).finished();
+    await expect(dialog).toBeVisible();
+    expect(create.requested()).toBe(false);
+    await testInfo.attach('billing-refresh-recovers-without-auto-submit', { body: await page.screenshot(), contentType: 'image/png' });
+    await dialog.getByRole('button', { name: /not now|later|暂不|稍后/i }).click();
+    await sendFromHome(page, 'Recover after external recharge without resubmitting.');
+    await expect.poll(() => create.requested()).toBe(true);
+    create.release();
+    await runs.expectCount(1);
+    await expect(page.getByTestId('chat-composer')).toBeVisible();
+    const before = hintReads;
+    const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/workspace/billing');
+    await page.evaluate(() => window.dispatchEvent(new Event('od:workspace-billing-refresh')));
+    await (await refreshed).finished();
+    expect(hintReads).toBe(before);
+  } finally {
+    billingEvent.resolve();
+    create.release();
+  }
+});
+
+test('[P0] twenty Home sends stay blocked across expiry, billing events and failed confirmation', async ({ page }, testInfo) => {
+  const start = Date.now();
+  await page.clock.setFixedTime(start);
+  await wireSignedInAmrHome(page, { accountBalanceUsd: '0.00' });
+  const create = await holdProjectCreate(page);
+  await routeSuccessfulRuns(page, { runId: 'home-retained-funding-run' });
+  const { workspaceId, workspaceMemberId } = AMR_PERSONAL_WORKSPACE_CONTEXT;
+  let now = start;
+  let verdict: 'insufficient' | 'unknown' | 'available' = 'insufficient';
+  let unavailable = false;
+  // The display projection is unavailable throughout; only confirmed funding
+  // evidence can keep the draft here after its old 30-second TTL.
+  await page.route('**/api/workspace/billing?**', (route) => route.fulfill({ json: { summary: null, workspaceBalance: null } }));
+  await page.route('**/api/workspace/billing/preflight?**', (route) => route.fulfill(unavailable
+    ? { status: 503, json: { error: 'unavailable' } }
+    : { json: { preflight: { schemaVersion: 1, workspaceId, workspaceMemberId, modelId: 'glm-5',
+      generatedAt: new Date(now).toISOString(), balanceUsd: '0', fundingCheck: verdict } } }));
+  const warmed = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?')
+    && new URL(response.url()).searchParams.get('modelId') === 'glm-5');
+  try {
+    await gotoEntryHome(page);
+    await (await warmed).finished();
+    for (let attempt = 1; attempt <= 20; attempt++) {
+      if (attempt === 9) {
+        now += 31_000;
+        await page.clock.setFixedTime(now);
+        verdict = 'unknown';
+        // Same window event dispatched by the existing billing recovery path.
+        await page.evaluate(() => window.dispatchEvent(new Event('od:workspace-billing-refresh')));
+      }
+      unavailable = attempt >= 15;
+      const checked = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?'));
+      await sendFromHome(page, 'Keep this insufficient draft on Home.');
+      await (await checked).finished();
+      const dialog = page.getByTestId('amr-balance-dialog');
+      await expect(dialog).toBeVisible();
+      await expect(page.getByTestId('project-creation-pending-view')).toHaveCount(0);
+      expect(create.requested(), `attempt ${attempt} must not create a project`).toBe(false);
+      await dialog.getByRole('button', { name: /not now|later|暂不|稍后/i }).click();
+      await expect(page.getByTestId('home-hero-submit')).toBeEnabled();
+    }
+    await testInfo.attach('twenty-blocked-sends-preserve-draft', { body: await page.screenshot(), contentType: 'image/png' });
+    unavailable = false;
+    verdict = 'available';
+    const recovered = page.waitForResponse((response) => response.url().includes('/api/workspace/billing/preflight?'));
+    await sendFromHome(page, 'Keep this insufficient draft on Home.');
+    await (await recovered).finished();
+    const dialog = page.getByTestId('amr-balance-dialog');
+    await expect(dialog).toBeVisible();
+    expect(create.requested()).toBe(false);
+    await dialog.getByRole('button', { name: /not now|later|暂不|稍后/i }).click();
+    await sendFromHome(page, 'Keep this insufficient draft on Home.');
+    await expect.poll(() => create.requested()).toBe(true);
+  } finally {
     create.release();
   }
 });
