@@ -263,7 +263,7 @@ export interface RegisterCollabSyncRoutesDeps {
   recordPublicFilePublication?: RecordPublicFilePublication;
   sharePublishing?: {
     ensureProject?(scope: PublicFilePublicationScope, principal: ResourceHubPrincipal, run: typeof runVelaCommand): Promise<TeamProject>;
-    sourceFileId?(scope: PublicFilePublicationScope): string;
+    sourceFileId?(scope: PublicFilePublicationScope, project?: TeamProject | null): string;
     admitFileReceipt?(scope: PublicFilePublicationScope, resourceId: string, versionId: string, entryPath: string, run: typeof runVelaCommand): Promise<void>;
     reservations: ReturnType<typeof createShareAliasReservations>;
     outbox: ShareBindingOutbox;
@@ -1372,7 +1372,7 @@ export function registerCollabSyncRoutes(
     const publisher = deps.sharePublishing;
     if (!publisher) return res.status(503).json({ error: 'PUBLIC_SHARE_PUBLISH_UNAVAILABLE' });
     const scope = publicFilePublicationScope(projectId, filePath, principal);
-    if (publisher.sourceFileId) scope.sourceFileId = publisher.sourceFileId(scope);
+    if (publisher.sourceFileId) scope.sourceFileId = publisher.sourceFileId(scope, sharedProject);
     // A stopped link cannot be reopened by the ordinary publish/update POST:
     // that path advances the alias and transfers fresh bytes. Only an explicit
     // request may reopen the immutable generation previously bound by Vela.
@@ -1883,7 +1883,7 @@ export function registerCollabSyncRoutes(
       };
       return res.json(response);
     }
-    const sourceFileId = deps.sharePublishing?.sourceFileId?.(scope);
+    const sourceFileId = deps.sharePublishing?.sourceFileId?.(scope, sharedProject);
     let remote: ReturnType<typeof currentFileSharePublication>;
     try { remote = currentFileSharePublication(history, filePath, sourceFileId); }
     catch (error) {

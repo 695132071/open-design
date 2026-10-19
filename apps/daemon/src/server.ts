@@ -5551,10 +5551,10 @@ export async function startServer({
     resolveLocalPublicShareOwner: resolveLocalProjectOwner,
     resolvePublicShareLink: (projectId, slug, amr) => resolvePublicShareLink(projectId, slug, amr, process.env, configuredAmrEnv()),
     sharePublishing: {
-      sourceFileId: scope => localCommentFiles.identity(scope.projectId, scope.filePath),
+      sourceFileId: (scope, project) => localCommentFiles.identity(scope.projectId, scope.filePath, project?.metadata?._commentFiles),
       admitFileReceipt: (scope, resourceId, versionId, entryPath, run) => localCommentFiles.admit({
         projectId: scope.projectId, workspaceId: scope.resourceTeamId, creatorMemberId: scope.ownerMemberId,
-        resourceId, versionId, paths: [{ sourceFilePath: scope.filePath, entryPath }], run,
+        resourceId, versionId, paths: [{ sourceFilePath: scope.filePath, entryPath, sourceFileId: scope.sourceFileId }], run,
       }),
       ensureProject: (scope, principal, run) => ensurePublicShareProject({
         projectId: scope.projectId, principal, run, describeProject: describeCollabProject,

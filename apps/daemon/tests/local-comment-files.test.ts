@@ -13,6 +13,8 @@ import { createSqlitePublicFilePublicationStore } from '../src/collab/public-fil
 import { createPublicFilePublicationRecorder } from '../src/collab/public-file-publication-recording.js';
 import { enqueuePublishedFileComments } from '../src/collab/published-file-comment-backfill.js';
 import { createCommentRelayOutboxStore } from '../src/collab/comment-relay-outbox.js';
+import { previewCommentToCloud } from '../src/collab/collab-cloud-service.js';
+import { recordCommentRelayPublicationMapping, recordPublishedCommentMutation } from '../src/collab/comment-relay-publication-mapping.js';
 import type { CollabCloudComment } from '@open-design/contracts';
 
 let root: string | undefined;
@@ -25,8 +27,8 @@ function setup() {
   ensureWorkspaceProject(db, { projectId: 'p', workspaceId: 'w', visibility: 'personal', createdByWorkspaceMemberId: 'creator', resourceHubResourceId: 'root' });
   return db;
 }
-function catalog() {
-  let stored: CommentFileState = { schemaVersion: 1, revision: 0, files: [] };
+function catalog(initial: CommentFileState = { schemaVersion: 1, revision: 0, files: [] }) {
+  let stored: CommentFileState = initial;
   const run = vi.fn(async (args: string[]) => {
     if (args[1] === 'upsert') {
       const mutation = JSON.parse(args[6] ?? '')._commentFiles as CommentFileMutation;
@@ -73,6 +75,170 @@ it('private selected receipt admission needs no alias or root upload; managed F1
   expect(cloud.state().files).toContainEqual({ ...first, sourceFileId: secondId, versionId: 'fresh-v2' });
   expect(cloud.run.mock.calls.every(([args]) => args[0] === 'team-projects')).toBe(true);
 });
+it('reuses an active cloud identity when the local mapping is missing and admits only the fresh upload receipt', async () => {
+  const db = setup();
+  const files = createLocalCommentFiles(db);
+  const local = ensureWorkspaceArtifactForPath(db, { projectId: 'p', path: 'a.html', kind: 'html' });
+  const remote: CommentFileState = { schemaVersion: 1, revision: 4, files: [{
+    sourceFileId: '11111111-1111-4111-8111-111111111111', sourceFilePath: 'a.html', entryPath: 'a.html',
+    resourceId: 'root', versionId: 'old-version', retired: false,
+  }] };
+  const cloud = catalog(remote);
+  const sourceFileId = files.identity('p', 'a.html', remote);
+  expect(sourceFileId).toBe(remote.files[0]!.sourceFileId);
+  expect(sourceFileId).not.toBe(local.id);
+  // Catalog identity does not prove that old remote bytes exist locally.
+  expect(getProject(db, 'p')?.metadata?._commentFiles).toBeUndefined();
+  await files.admit({ projectId: 'p', workspaceId: 'w', creatorMemberId: 'creator',
+    resourceId: 'selected', versionId: 'fresh-upload',
+    paths: [{ sourceFilePath: 'a.html', entryPath: 'index.html', sourceFileId }], run: cloud.run });
+  expect(cloud.state().files).toEqual([{ ...remote.files[0], entryPath: 'index.html', resourceId: 'selected', versionId: 'fresh-upload' }]);
+  expect(getProject(db, 'p')?.metadata?._commentFiles).toEqual(cloud.state());
+  expect(files.identity('p', 'a.html')).toBe(sourceFileId);
+  expect(getWorkspaceArtifact(db, local.id)).toMatchObject({ currentPath: 'a.html', deletedAt: null });
+  expect(getProject(db, 'p')?.metadata?.unrelated).toBe('keep');
+  const comment: CollabCloudComment = { id: 'old-comment', projectId: 'p', conversationId: 'remote', memberId: 'creator', seq: 1,
+    sourceFileId, sourceFilePath: 'a.html', filePath: 'a.html', elementId: 'hero', selector: '#hero', label: 'Hero',
+    text: '', htmlHint: '', note: 'existing comment', position: { x: 0, y: 0, width: 1, height: 1 },
+    authorKind: 'member', createdAt: 1, updatedAt: 2, status: 'open' };
+  expect(normalizeCurrentFileComment(cloud.state(), comment)?.sourceFileId).toBe(sourceFileId);
+});
+
+it('atomically rebinds pre-share comments and pending relay snapshots before publication backfill', async () => {
+  const db = setup();
+  const files = createLocalCommentFiles(db);
+  const localId = files.identity('p', 'a.html');
+  const target = (filePath: string) => ({ filePath, elementId: 'hero', selector: '#hero', label: 'Hero',
+    position: { x: 1, y: 2, width: 3, height: 4 } });
+  const original = upsertPreviewComment(db, 'p', 'c', { id: 'local-comment', sourceFileId: localId,
+    authorMemberId: 'creator', note: 'before sharing', target: target('a.html') });
+  if (!original) throw new Error('missing local comment');
+  upsertPreviewComment(db, 'p', 'c', { id: 'different-file', sourceFileId: localId, note: 'wrong path', target: target('b.html') });
+  upsertPreviewComment(db, 'p', 'c', { id: 'identityless', note: 'legacy', target: target('a.html') });
+  const retiredId = '22222222-2222-4222-8222-222222222222';
+  upsertPreviewComment(db, 'p', 'c', { id: 'different-lifetime', sourceFileId: retiredId, note: 'other lifetime', target: target('a.html') });
+  upsertPreviewComment(db, 'p', 'c', { id: 'inbound', sourceFileId: localId, note: 'inbound user', target: target('a.html') });
+  db.prepare("UPDATE preview_comments SET author_kind = 'user', author_app_user_id = 'external-user' WHERE id = 'inbound'").run();
+  upsertPreviewComment(db, 'p', 'c', { id: 'already-synced', sourceFileId: localId, note: 'remote lifetime', target: target('a.html') });
+  db.prepare("UPDATE preview_comments SET cloud_revision_seq = 42 WHERE id = 'already-synced'").run();
+  insertProject(db, { id: 'other', name: 'Other', createdAt: 1, updatedAt: 1 });
+  insertConversation(db, { id: 'other-c', projectId: 'other', title: 'Other', createdAt: 1, updatedAt: 1 });
+  upsertPreviewComment(db, 'other', 'other-c', { id: 'other-project', sourceFileId: localId, note: 'foreign project', target: target('a.html') });
+  const outbox = createCommentRelayOutboxStore(db);
+  outbox.enqueue({ workspaceId: 'w', workspaceMemberId: 'creator', teamId: 'w', relayScope: 'personal',
+    projectId: 'p', expectedOwnerMemberId: 'creator', comment: previewCommentToCloud(original, '') });
+  const queuedBefore = outbox.listDue(Date.now())[0]!;
+  const publications = createSqlitePublicFilePublicationStore(db);
+  db.transaction(() => {
+    const scope = { resourceTeamId: 'w', ownerMemberId: 'creator', projectId: 'p', filePath: 'a.html' };
+    recordCommentRelayPublicationMapping(db, scope, { slug: 'recovered', token: 'old-revision', publicFilePath: 'index.html' });
+    expect(recordPublishedCommentMutation(db, scope, { ...queuedBefore.comment, note: 'latest stopped edit' })).toBe(true);
+  })();
+  const remote: CommentFileState = { schemaVersion: 1, revision: 3, files: [{ sourceFileId: '11111111-1111-4111-8111-111111111111',
+    sourceFilePath: 'a.html', entryPath: 'a.html', resourceId: 'root', versionId: 'old', retired: false }] };
+  const cloud = catalog(remote);
+  const sourceFileId = files.identity('p', 'a.html', remote);
+  const input = { projectId: 'p', workspaceId: 'w', creatorMemberId: 'creator', resourceId: 'selected', versionId: 'fresh',
+    paths: [{ sourceFilePath: 'a.html', entryPath: 'index.html', sourceFileId }], run: cloud.run };
+  await files.admit(input);
+  expect(getProjectPreviewComment(db, 'p', original.id)).toMatchObject({ sourceFileId, note: original.note,
+    authorMemberId: original.authorMemberId, createdAt: original.createdAt, updatedAt: original.updatedAt });
+  const queuedAfter = outbox.listDue(Date.now())[0]!;
+  expect(queuedAfter.comment).toMatchObject({ id: original.id, sourceFileId, sourceFilePath: 'a.html' });
+  expect(queuedAfter.revision).toBeGreaterThan(queuedBefore.revision);
+  expect(queuedAfter.eventKey).not.toBe(queuedBefore.eventKey);
+  expect(outbox.acknowledge(queuedBefore, 'delivered')).toBe(false);
+  expect(getProjectPreviewComment(db, 'p', 'different-file')?.sourceFileId).toBe(localId);
+  expect(getProjectPreviewComment(db, 'p', 'identityless')?.sourceFileId).toBeUndefined();
+  expect(getProjectPreviewComment(db, 'p', 'different-lifetime')?.sourceFileId).toBe(retiredId);
+  expect(getProjectPreviewComment(db, 'p', 'inbound')?.sourceFileId).toBe(localId);
+  expect(getProjectPreviewComment(db, 'p', 'already-synced')?.sourceFileId).toBe(localId);
+  expect(getProjectPreviewComment(db, 'other', 'other-project')?.sourceFileId).toBe(localId);
+  const record = createPublicFilePublicationRecorder(db, publications, enqueuePublishedFileComments);
+  const scope = { sourceFileId, resourceTeamId: 'w', ownerMemberId: 'creator', projectId: 'p', filePath: 'a.html' };
+  record(scope, { slug: 'recovered', url: null, fileName: 'a.html' }, [{ sourcePath: 'a.html', publishedPath: 'index.html' }]);
+  const backfilled = outbox.listDue(Date.now());
+  expect(backfilled).toHaveLength(1);
+  expect(backfilled[0]!.comment).toMatchObject({ id: original.id, sourceFileId, note: 'latest stopped edit' });
+  const eventKey = backfilled[0]!.eventKey;
+  await files.admit(input);
+  record(scope, { slug: 'recovered', url: null, fileName: 'a.html' }, [{ sourcePath: 'a.html', publishedPath: 'index.html' }]);
+  expect(outbox.listDue(Date.now())).toHaveLength(1);
+  expect(outbox.listDue(Date.now())[0]!.eventKey).toBe(eventKey);
+});
+
+it.each(['cloud admission', 'local commit'])('keeps comments, relay snapshots and facts unchanged on failed %s', async failure => {
+  const db = setup();
+  const files = createLocalCommentFiles(db);
+  const localId = files.identity('p', 'a.html');
+  const original = upsertPreviewComment(db, 'p', 'c', { id: 'pending', sourceFileId: localId, authorMemberId: 'creator', note: 'local',
+    target: { filePath: 'a.html', elementId: 'hero', selector: '#hero', label: 'Hero', position: { x: 0, y: 0, width: 1, height: 1 } } });
+  if (!original) throw new Error('missing comment');
+  const outbox = createCommentRelayOutboxStore(db);
+  outbox.enqueue({ workspaceId: 'w', workspaceMemberId: 'creator', teamId: 'w', relayScope: 'personal', projectId: 'p',
+    expectedOwnerMemberId: 'creator', comment: previewCommentToCloud(original, '') });
+  const queued = outbox.listDue(Date.now());
+  const remote: CommentFileState = { schemaVersion: 1, revision: 3, files: [{ sourceFileId: '11111111-1111-4111-8111-111111111111',
+    sourceFilePath: 'a.html', entryPath: 'a.html', resourceId: 'root', versionId: 'old', retired: false }] };
+  const cloud = catalog(remote);
+  if (failure === 'local commit') db.exec(`CREATE TRIGGER fail_identity_commit BEFORE UPDATE OF metadata_json ON projects
+    BEGIN SELECT RAISE(ABORT, 'local commit failed'); END`);
+  await expect(files.admit({ projectId: 'p', workspaceId: 'w', creatorMemberId: 'creator', resourceId: 'selected', versionId: 'fresh',
+    paths: [{ sourceFilePath: 'a.html', entryPath: 'index.html', sourceFileId: files.identity('p', 'a.html', remote) }],
+    run: async args => {
+      if (failure === 'cloud admission' && args[1] === 'upsert') throw new Error('cloud admission failed');
+      return cloud.run(args);
+    } })).rejects.toThrow(`${failure} failed`);
+  expect(getProjectPreviewComment(db, 'p', original.id)).toMatchObject({ sourceFileId: localId, note: original.note });
+  expect(outbox.listDue(Date.now())).toEqual(queued);
+  expect(getProject(db, 'p')?.metadata?._commentFiles).toBeUndefined();
+});
+
+it('does not migrate comments from an artifact identity already retired in the catalog', async () => {
+  const db = setup();
+  const files = createLocalCommentFiles(db);
+  const localId = files.identity('p', 'a.html');
+  const original = upsertPreviewComment(db, 'p', 'c', { id: 'retired-comment', sourceFileId: localId, note: 'old lifetime',
+    target: { filePath: 'a.html', elementId: 'hero', selector: '#hero', label: 'Hero', position: { x: 0, y: 0, width: 1, height: 1 } } });
+  if (!original) throw new Error('missing comment');
+  const active = { sourceFileId: '11111111-1111-4111-8111-111111111111', sourceFilePath: 'a.html',
+    entryPath: 'a.html', resourceId: 'root', versionId: 'old', retired: false };
+  const remote: CommentFileState = { schemaVersion: 1, revision: 3, files: [active, { ...active, sourceFileId: localId, retired: true }] };
+  const cloud = catalog(remote);
+  await expect(files.admit({ projectId: 'p', workspaceId: 'w', creatorMemberId: 'creator', resourceId: 'selected', versionId: 'fresh',
+    paths: [{ sourceFilePath: 'a.html', entryPath: 'index.html', sourceFileId: files.identity('p', 'a.html', remote) }],
+    run: cloud.run })).rejects.toThrow('COMMENT_FILE_LIFETIME_CONFLICT');
+  expect(getProjectPreviewComment(db, 'p', original.id)?.sourceFileId).toBe(localId);
+  expect(getProject(db, 'p')?.metadata?._commentFiles).toBeUndefined();
+});
+
+it('does not persist recovered identity when cloud admission fails', async () => {
+  const db = setup();
+  const files = createLocalCommentFiles(db);
+  await expect(files.admit({ projectId: 'p', workspaceId: 'w', creatorMemberId: 'creator',
+    resourceId: 'selected', versionId: 'fresh', paths: [{ sourceFilePath: 'a.html', entryPath: 'index.html',
+      sourceFileId: '11111111-1111-4111-8111-111111111111' }],
+    run: vi.fn(async () => { throw new Error('catalog unavailable'); }) })).rejects.toThrow('catalog unavailable');
+  expect(getProject(db, 'p')?.metadata?._commentFiles).toBeUndefined();
+});
+
+it('does not reuse retired cloud identities or override a locally known lifetime', () => {
+  const db = setup();
+  const files = createLocalCommentFiles(db);
+  const local = files.identity('p', 'a.html');
+  const remote: CommentFileState = { schemaVersion: 1, revision: 2, files: [{
+    sourceFileId: '11111111-1111-4111-8111-111111111111', sourceFilePath: 'a.html', entryPath: 'a.html',
+    resourceId: 'root', versionId: 'old', retired: true,
+  }] };
+  expect(files.identity('p', 'a.html', remote)).toBe(local);
+  expect(files.identity('p', 'different.html', remote)).not.toBe(remote.files[0]!.sourceFileId);
+  remote.files[0]!.retired = false;
+  updateProject(db, 'p', { metadata: { _commentFiles: { ...remote, files: [{ ...remote.files[0]!, sourceFileId: local }] } } });
+  expect(files.identity('p', 'a.html', remote)).toBe(local);
+  updateProject(db, 'p', { metadata: { _commentFiles: { ...remote, files: [{ ...remote.files[0]!, sourceFileId: local, retired: true }] } } });
+  expect(files.identity('p', 'a.html', remote)).not.toBe(remote.files[0]!.sourceFileId);
+});
+
 it('rename tracking includes only exact durable new-protocol UUID/path associations in this project', () => {
   const db = setup();
   const files = createLocalCommentFiles(db);
