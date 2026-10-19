@@ -27,6 +27,33 @@ it('retains the same alias and source key across connections, restarts and detac
     finally { reopened.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+it.each(['resourceTeamId', 'ownerMemberId', 'projectId', 'filePath', 'sourceFileId'] as const)('does not steal a recovered alias from another %s scope', key => {
+  const db = new Database(':memory:');
+  try {
+    const generateId = vi.fn(() => { throw new Error('must not generate'); });
+    const store = createShareAliasReservations(db, generateId);
+    const cloud = { sourceFileId: scope.sourceFileId, sourceFilePath: scope.filePath, slug: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+    const original = store.restore(scope, cloud);
+    const other = { ...scope, [key]: key === 'sourceFileId' ? '22222222-2222-4222-8222-222222222222' : 'other' };
+    expect(() => store.restore(other, { ...cloud, sourceFileId: other.sourceFileId, sourceFilePath: other.filePath })).toThrow();
+    expect(store.get(scope)).toEqual(original);
+    expect(store.get(other)).toBeNull();
+    expect(generateId).not.toHaveBeenCalled();
+  } finally { db.close(); }
+});
+
+it('rejects an alias with a different or missing file identity or a different path', () => {
+  const db = new Database(':memory:');
+  try {
+    const store = createShareAliasReservations(db);
+    const cloud = { sourceFileId: scope.sourceFileId, sourceFilePath: scope.filePath, slug: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+    expect(() => store.restore(scope, { sourceFilePath: cloud.sourceFilePath, slug: cloud.slug })).toThrow('SHARE_ALIAS_IDENTITY_MISMATCH');
+    expect(() => store.restore(scope, { ...cloud, sourceFileId: '22222222-2222-4222-8222-222222222222' })).toThrow('SHARE_ALIAS_IDENTITY_MISMATCH');
+    expect(() => store.restore(scope, { ...cloud, sourceFilePath: 'other.html' })).toThrow('SHARE_ALIAS_IDENTITY_MISMATCH');
+    expect(store.get(scope)).toBeNull();
+  } finally { db.close(); }
+});
+
 it.each(['resourceTeamId', 'ownerMemberId', 'projectId', 'filePath'] as const)('isolates reservations by %s and refuses empty identity', key => {
   const db = new Database(':memory:');
   try {
