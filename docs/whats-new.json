@@ -1,16 +1,15 @@
 {
-  "id": "0.22.1",
-  "title": "The OpenDesign Product Design Hackathon is here!",
-  "body": "Win up to $1,000 in tokens: Share your website, app, or product design built with OpenDesign on X. The 10 entries with the most likes win prizes!\nRewards for the first 50 submissions: Join the OpenDesign Discord or Feishu community and share your work. The first 50 participants each get $5 in tokens!\n40% better prototype designs: Upgrade to version 0.22.0 or later to experience OpenDesign’s latest design improvements!",
+  "id": "0.26.0",
+  "title": "The first collaborative motion video Agent",
+  "body": "Share files or motion videos with one link, collect feedback from colleagues and clients, and validate PMF faster.\nKeep cloud and local versions in sync, reduce miscommunication, and help your team move forward efficiently.\nSync feedback back to the project for Agent to act on, keep the original link updated, and shorten delivery time.",
   "imageUrl": "https://whatsnew.open-design.ai/0.18.0.webp",
-  "linkUrl": "https://open-design.ai/opendesign-hackathon/",
-  "ctaLabel": "Explore the Hackathon",
+  "linkUrl": "https://github.com/nexu-io/open-design/releases/tag/open-design-v0.26.0",
+  "ctaLabel": "View release notes",
   "locales": {
     "zh-CN": {
-      "title": "OpenDesign 产品设计黑客松来了！",
-      "body": "最高获价值 1000 美金 Token：分享用 OpenDesign 做的网页/App/产品设计到 X，点赞 Top 10 均可获奖；\n前50位投稿都有奖：加入OpenDesign Discord/飞书社群分享作品，前 50 名人人可得 $5 Token；\n原型设计效果提升 40%：升级 0.22.0 及以上版本，体验最新OpenDesign设计效果！",
-      "linkUrl": "https://open-design.ai/zh/opendesign-hackathon/",
-      "ctaLabel": "查看活动"
+      "title": "首个支持协作的动效视频 Agent",
+      "body": "一个链接分享文件或动效视频，收集同事和客户反馈，更快验证 PMF\n版本云端和本地同步更新，减少沟通偏差，让团队高效推进\n反馈同步回项目，交给 Agent 修改，原链接持续更新，缩短交付时间",
+      "ctaLabel": "查看更新说明"
     }
   }
 }
