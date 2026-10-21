@@ -11,7 +11,9 @@ import type {
 import type { AnalyticsContext } from '../analytics.js';
 import { defaultMediaExecutionPolicy, mediaPolicyDenial } from '../media/policy.js';
 import { formatMediaTaskDiagnostic } from '../media/diagnostics.js';
-import { findMediaModel } from '../media/models.js';
+import { findMediaModel, type MediaModel } from '../media/models.js';
+import { fetchVelaVideoModels } from '../media/vela.js';
+import type { CloudVideoModelsResponse } from '@open-design/contracts';
 import type { ImageGenerationRequestSummary } from '../media/image-generation-retry.js';
 import type { RouteDeps } from '../server-context.js';
 import type {
@@ -676,7 +678,28 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       // Analytics is best-effort and must not change the media task outcome.
     }
   };
-  app.get('/api/media/models', (_req, res) => {
+  app.get('/api/media/models', async (req, res) => {
+    if (req.query.cloud === 'true') {
+      if (!isLocalSameOrigin(req, getResolvedPort())) return res.status(403).json({ error: 'cross-origin request rejected' });
+      const grant = optionalToolGrantFromRequest(req, { operation: 'media:generate' });
+      const projectId = grant?.projectId ?? (typeof req.query.projectId === 'string' ? req.query.projectId : '');
+      if (!projectId) return sendApiError(res, 400, 'BAD_REQUEST', 'projectId is required for the scoped cloud catalogue');
+      if (grant) {
+        if (!await ctx.authorizeProjectToolRequest(res, projectId, { mode: 'read' })) return;
+      } else if (!await ctx.authorizeProjectRequest(req, res, projectId, { mode: 'read' })) return;
+      try {
+        const workspaceId = getWorkspaceProjectByProjectId(db, projectId)?.workspaceId?.trim() || undefined;
+        const available = await fetchVelaVideoModels(workspaceId);
+        const catalogue: CloudVideoModelsResponse = {
+          video: VIDEO_MODELS.filter((model: MediaModel) => model.provider === 'vela'
+            && available.includes(model.id.replace(/^vela\//, ''))),
+          source: 'account_workspace_catalogue',
+        };
+        return res.json(catalogue);
+      } catch {
+        return sendApiError(res, 503, 'MEDIA_CATALOG_UNAVAILABLE', 'Cloud video availability could not be verified; do not infer availability from the static catalogue.');
+      }
+    }
     res.json({
       providers: MEDIA_PROVIDERS,
       image: IMAGE_MODELS,

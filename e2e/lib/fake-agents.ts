@@ -651,8 +651,8 @@ async function emitOdNextProductionRun(promptText) {
   const homeFirstRun = identity.homeFirstRun === true;
   if (homeFirstRun) await new Promise((resolve) => setTimeout(resolve, 1200));
   await writeFileFs(
-    join(projectDir(), 'od-next-active-canary.html'),
-    homeFirstRun ? '<!doctype html><html><body><h1>Delayed Daemon Smoke</h1></body></html>'
+    join(projectDir(), homeFirstRun ? 'delayed-daemon-smoke.html' : 'od-next-active-canary.html'),
+    homeFirstRun ? '<!doctype html><html><body><h1>Delayed Daemon Smoke</h1><p>Generated after a delayed daemon turn.</p></body></html>'
       : legacyDeck ? legacyTemplateDeckCanaryHtml : protocolDeckCanaryHtml,
     'utf8',
   );

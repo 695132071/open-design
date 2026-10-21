@@ -43,10 +43,9 @@ outranked the saved mode, and survived restart while the Labs switch still read
 "on". It is gone, so a divergence you are chasing cannot be a leftover from an
 earlier run on the same machine.
 
-User-facing switch: Settings → Labs → Design Harness
-(`apps/web/src/components/LabsSection.tsx`, reading
-`GET /api/strategies/od-next/rollout`). Process override:
-`OD_NEXT_STRATEGY_ROLLOUT`. Saved preference: app-config `odNextStrategyMode`.
+The Labs page remains, but its OD Next switch is retired. Historical personal
+`odNextStrategyMode` preferences do not disable the default active route.
+`OD_NEXT_STRATEGY_ROLLOUT` remains an engineering process override.
 
 ## The variant axes
 

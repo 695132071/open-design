@@ -106,6 +106,7 @@ describe('/api/chat', () => {
   let server: http.Server;
   let baseUrl: string;
   let originalMemoryConfig: Awaited<ReturnType<typeof readMemoryConfig>> | null = null;
+  const originalStrategyMode = process.env.OD_NEXT_STRATEGY_ROLLOUT;
   const originalPath = process.env.PATH;
   const originalAgentHome = process.env.OD_AGENT_HOME;
   const tempDirs: string[] = [];
@@ -269,6 +270,8 @@ child.on('exit', (code, signal) => {
   }
 
   beforeAll(async () => {
+    // These direct-chat fixtures exercise legacy runtime transport, not Task orchestration.
+    process.env.OD_NEXT_STRATEGY_ROLLOUT = 'off';
     if (process.env.OD_DATA_DIR) {
       originalMemoryConfig = await readMemoryConfig(process.env.OD_DATA_DIR);
       await writeMemoryConfig(process.env.OD_DATA_DIR, {
@@ -301,6 +304,8 @@ child.on('exit', (code, signal) => {
   });
 
   afterAll(async () => {
+    if (originalStrategyMode == null) delete process.env.OD_NEXT_STRATEGY_ROLLOUT;
+    else process.env.OD_NEXT_STRATEGY_ROLLOUT = originalStrategyMode;
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
     }

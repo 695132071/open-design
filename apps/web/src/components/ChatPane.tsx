@@ -1122,11 +1122,9 @@ export function foldStrategyTaskTurns(messages: ChatMessage[]): FoldedChatMessag
       // internal step, not the turn ending.
       runId: message.runId ?? head.runId,
       runStatus: message.runStatus ?? head.runStatus,
-      // Likewise the task verdict: only the final Run of the chain carries it,
-      // and the folded turn is what the pinned todo card reads.
-      ...(message.strategyTaskDelivered
-        ? { strategyTaskDelivered: message.strategyTaskDelivered }
-        : {}),
+      // Completion belongs to the final physical Run, including false or
+      // absent legacy values. Never inherit the planning Run's verdict.
+      strategyTaskDelivered: message.strategyTaskDelivered,
       ...(message.endedAt ? { endedAt: message.endedAt } : {}),
       ...(message.resultDeliveryState
         ? { resultDeliveryState: message.resultDeliveryState }

@@ -27,6 +27,7 @@ export const StrategyTaskTypeV2Schema = z.enum([
   'ppt',
   'marketing',
   'hyperframes',
+  'discovery',
   'motion-design',
   'generic',
 ]);
@@ -153,7 +154,7 @@ export const BundledStrategyDeclarationV2Schema = z.object({
   assets: z.object({
     core: StrategyAssetDeclarationV2Schema,
     orchestration: StrategyAssetDeclarationV2Schema,
-    taskProfiles: z.array(StrategyTaskProfileAssetDeclarationV2Schema).min(4).max(5),
+    taskProfiles: z.array(StrategyTaskProfileAssetDeclarationV2Schema).min(4),
     taskProfileMapping: StrategyAssetDeclarationV2Schema,
   }).strict(),
 }).strict().superRefine((value, context) => {
@@ -335,6 +336,16 @@ export type StrategyTaskBlockedContextV2 = z.infer<typeof StrategyTaskBlockedCon
 export const StrategySettlementReasonV2Schema = z.enum(['question', 'continued', 'ended']);
 export type StrategySettlementReasonV2 = z.infer<typeof StrategySettlementReasonV2Schema>;
 
+/**
+ * Read compatibility for settlement facts persisted by local delivery-recovery
+ * betas. The current coordinator does not emit or consume these extra facts.
+ * Keep the known optional fields so rolling back does not break stored tasks.
+ */
+export const StrategyOutputKindSchema = z.enum(['html', 'image', 'video', 'audio', 'document', 'presentation', 'pdf', 'text']);
+export const StrategyOutputGoalSchema = z.array(StrategyOutputKindSchema).max(8);
+export type StrategyOutputGoal = z.infer<typeof StrategyOutputGoalSchema>;
+export const StrategyDeliveryStateSchema = z.enum(['answer', 'waiting', 'pending', 'delivered', 'incomplete', 'unknown']);
+export type StrategyDeliveryState = z.infer<typeof StrategyDeliveryStateSchema>;
 /** Unknown historical facts stay absent rather than being inferred from an outcome. */
 export const StrategySettlementFactsV2Schema = z.object({
   physicalStatus: z.enum(['succeeded', 'failed', 'canceled']).optional(),
@@ -345,6 +356,10 @@ export const StrategySettlementFactsV2Schema = z.object({
   productionReady: z.boolean().optional(),
   emptyReply: z.boolean().optional(),
   executionIntent: StrategyExecutionIntentV2Schema.optional(),
+  outputGoal: StrategyOutputGoalSchema.optional(),
+  deliveryState: StrategyDeliveryStateSchema.optional(),
+  productionSignal: z.enum(['accepted', 'missing', 'rejected', 'non_terminal']).optional(),
+  hostDeliveryFailure: z.boolean().optional(),
 }).strict();
 export type StrategySettlementFactsV2 = z.infer<typeof StrategySettlementFactsV2Schema>;
 

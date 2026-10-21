@@ -80,6 +80,16 @@ afterEach(() => {
 });
 
 describe('OPEND-3740 completion belongs to the final physical Run', () => {
+  it.each([false, undefined])('does not inherit a planning verdict when the final verdict is %s', verdict => {
+    const rows = taskRuns('The page still needs work.');
+    rows[0] = { ...rows[0]!, strategyTaskDelivered: true };
+    rows[1] = { ...rows[1]!, strategyTaskDelivered: verdict };
+    const message = foldedReply(rows);
+    expect(message.strategyTaskDelivered).toBe(verdict);
+    renderReply(message);
+    expectRemainingWork();
+  });
+
   it('keeps a production completion after folding planning and production', () => {
     const rows = taskRuns(`<od-done key="${PRODUCTION_KEY}"/>The page is delivered.`);
     // The same successful production must not acquire remaining work on reload.

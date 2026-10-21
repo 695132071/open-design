@@ -91,6 +91,7 @@ import { ContextChipHoverCard } from './ContextChipHoverCard';
 import { workspaceContextDetailLine, workspaceContextKindLabel } from './workspace-context';
 import { FigmaHelpModal } from './FigmaHelpModal';
 import { TemplatePicker } from './home-hero/TemplatePicker';
+import { TypePillRow } from './home-hero/TypePillRow';
 import { LibraryPicker } from './LibraryPicker';
 import { assetTitle } from './LibraryAssetMeta';
 import { libraryAssetRawUrl } from '../providers/registry';
@@ -1511,7 +1512,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
      rather than hard-coding a lead/tail pair per language. The nouns reuse the
      composer's own type labels, so the headline can never name a kind the type
      row does not offer. */
-  const titleTemplate = t('homeHero.title');
+  const titleTemplate = activeChipId ? t('homeHero.title') : t('homeHero.titleUnselected');
   const titleSlotIndex = titleTemplate.indexOf(TITLE_WORD_SLOT);
   const titleParts =
     titleSlotIndex === -1
@@ -1575,7 +1576,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           <h1
             className={
               'home-hero__title' +
-              (endsWithFullWidthPunctuation(t('homeHero.title'))
+              (endsWithFullWidthPunctuation(titleTemplate)
                 ? ' home-hero__title--optical-trim'
                 : '')
             }
@@ -1593,7 +1594,7 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 {titleParts.tail}
               </>
             ) : (
-              t('homeHero.title')
+              titleTemplate
             )}
           </h1>
           {/* One quiet line under the headline (per product). */}
@@ -2352,13 +2353,14 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             {/* Task type follows the two icon controls: it picks WHAT is being
                 made, and the pair before it answers "with what" / "in what
                 style". */}
-            <TemplatePicker
+            {activeChipId || isDock ? <TemplatePicker
               templates={templateChips}
               onPick={handlePickTaskChip}
+              onClear={onClearActiveChip}
               disabled={pluginsLoading || typeSelectionPending || pendingChipId !== null || pendingPluginId !== null}
               activeChipId={activeChipId}
               labelFor={(id) => homeHeroChipLabel(id, t)}
-            />
+            /> : null}
             {libraryPickerOpen ? (
               <LibraryPicker
                 onClose={() => setLibraryPickerOpen(false)}
@@ -2586,6 +2588,16 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           second filter strip between the composer and them re-asked a
           question the pill had just answered. The examples below now show the
           picked type's full set. */}
+
+      {!isDock && !activeChipId ? (
+        <TypePillRow
+          chips={templateChips}
+          activeChipId={null}
+          disabled={pluginsLoading || typeSelectionPending || pendingChipId !== null || pendingPluginId !== null}
+          labelFor={(id) => homeHeroChipLabel(id, t)}
+          onPick={handlePickTaskChip}
+        />
+      ) : null}
 
       {isDock ? null : recommendationSlot}
 

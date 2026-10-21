@@ -948,6 +948,26 @@ describe('durable strategy task store', () => {
     expect(() => getStrategyTaskExecution(db, poisoned.taskExecutionId)).toThrow();
   });
 
+  it('reads stored delivery-recovery beta facts without changing the task outcome', () => {
+    const task = createTask(db, snapshot, 'run-beta-facts');
+    const facts = {
+      physicalStatus: 'succeeded',
+      outputGoal: ['video'],
+      deliveryState: 'incomplete',
+      productionSignal: 'missing',
+      hostDeliveryFailure: true,
+    };
+    db.prepare('UPDATE strategy_task_runs SET settlement_facts_json = ? WHERE run_id = ?')
+      .run(JSON.stringify(facts), 'run-beta-facts');
+
+    closeDatabase();
+    db = openDatabase(tempDir, { dataDir: tempDir });
+    const reloaded = getStrategyTaskExecution(db, task.taskExecutionId);
+    expect(reloaded?.outcome).toBe(task.outcome);
+    expect(reloaded?.activeRunId).toBe(task.activeRunId);
+    expect(reloaded?.runs.at(-1)?.settlementFacts).toEqual(facts);
+  });
+
   it.each([
     ['running', 'completed'],
     ['canceled', 'canceled'],

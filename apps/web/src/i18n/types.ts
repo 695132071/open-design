@@ -1337,6 +1337,7 @@ export interface Dict {
 
   // Entry home
   'homeHero.title': string;
+  'homeHero.titleUnselected': string;
   'homeHero.titleWords': string;
   'homeHero.subtitle': string;
   'homeHero.startWithTemplate': string;
