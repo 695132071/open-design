@@ -826,8 +826,8 @@ export const zhCN: Dict = {
   "entry.tabConnectors": "连接器",
   "entry.openSettingsTitle": "设置",
   "entry.openSettingsAria": "打开设置",
-  "entry.discordLabel": "加入 Discord",
-  "entry.discordAria": "加入 Discord 社区，领取使用额度",
+  "entry.communityLabel": "加入飞书群",
+  "entry.communityAria": "加入 OpenDesign 飞书群",
   "entry.discordAriaWithOnline": "加入 OpenDesign Discord - {online}",
   "entry.discordOnlineLabel": "{count} 在线",
   "entry.xAria": "关注 @OpenDesignHQ，看新功能",
@@ -3256,7 +3256,7 @@ export const zhCN: Dict = {
     "选好设计系统再生成，结果会与品牌风格保持一致。",
   "designFiles.usefulInfoTip5":
     "没有想法？试试首页 Community 的插件模板，一键生成同款。",
-  "designFiles.usefulInfoTip6": "遇到问题或有建议？加入 Discord 和我们聊聊。",
+  "designFiles.usefulInfoTip6": "遇到问题或有建议？加入飞书群和我们聊聊。",
   "designFiles.usefulInfoTip7": "觉得好用？在 GitHub 给我们点个 Star。",
   "designFiles.usefulInfoTip8":
     "在 X 上关注 @OpenDesignHQ，第一时间了解新功能。",

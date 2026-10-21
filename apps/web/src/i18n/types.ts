@@ -1166,8 +1166,8 @@ export interface Dict {
   'entry.tabVideoTemplates': string;
   'entry.openSettingsTitle': string;
   'entry.openSettingsAria': string;
-  'entry.discordLabel': string;
-  'entry.discordAria': string;
+  'entry.communityLabel': string;
+  'entry.communityAria': string;
   'entry.discordAriaWithOnline': string;
   'entry.discordOnlineLabel': string;
   'entry.xAria': string;

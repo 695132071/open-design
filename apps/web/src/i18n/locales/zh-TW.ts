@@ -828,8 +828,8 @@ export const zhTW: Dict = {
   "entry.tabConnectors": "連接器",
   "entry.openSettingsTitle": "設定",
   "entry.openSettingsAria": "開啟設定",
-  "entry.discordLabel": "加入 Discord",
-  "entry.discordAria": "加入 Discord 社群，領取使用額度",
+  "entry.communityLabel": "加入飛書群",
+  "entry.communityAria": "加入 OpenDesign 飛書群",
   "entry.discordAriaWithOnline": "加入 OpenDesign Discord - {online}",
   "entry.discordOnlineLabel": "{count} 在線",
   "entry.xAria": "追蹤 @OpenDesignHQ，掌握新功能",
@@ -3264,7 +3264,7 @@ export const zhTW: Dict = {
     "選好設計系統再生成，結果會與品牌風格保持一致。",
   "designFiles.usefulInfoTip5":
     "沒有想法？試試首頁「社群」的外掛模板，一鍵生成同款。",
-  "designFiles.usefulInfoTip6": "遇到問題或有建議？加入 Discord 和我們聊聊。",
+  "designFiles.usefulInfoTip6": "遇到問題或有建議？加入飛書群和我們聊聊。",
   "designFiles.usefulInfoTip7": "覺得好用？在 GitHub 給我們點個 Star。",
   "designFiles.usefulInfoTip8":
     "在 X 上關注 @OpenDesignHQ，第一時間了解新功能。",
