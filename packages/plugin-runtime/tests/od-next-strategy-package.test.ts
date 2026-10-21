@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { BundledStrategyDeclarationV2Schema } from '@open-design/contracts';
+import { assertOdNextPlanningBuildOnlyV2, BundledStrategyDeclarationV2Schema } from '@open-design/contracts';
 import { parseManifest } from '../src/index.js';
 
 const pluginRoot = fileURLToPath(
@@ -98,6 +98,7 @@ describe('bundled OD Next Strategy V2 package', () => {
         expect(content).toBe(readFileSync(`${pluginRoot}/../../../../skills/motion-design/SKILL.md`, 'utf8'));
         expect(content).toContain('make at most one');
         expect(content).toContain('Do not spawn acceptance agents, score aesthetics, add a separate pipeline');
+        expect(() => assertOdNextPlanningBuildOnlyV2(content, assetPath)).not.toThrow();
         continue;
       }
       for (const forbidden of forbiddenContent) {
