@@ -33,7 +33,6 @@ import {
   composeOdNextStrategyCorePromptV2,
   OD_NEXT_BUNDLE_ECHO_GUARD_V2,
   odNextStrategyRecipeIdentityV2,
-  renderOdNextRuntimeFactsV2,
   composeOdNextStrategyStableRequestContextV2,
   executionProfileFromStreamFormat,
   PLUGIN_SHARE_ACTION_PLUGIN_IDS,
@@ -1196,6 +1195,7 @@ import {
   isZeroConfigClipperLibraryRequest,
   parseHostHeader,
 } from './origin-validation.js';
+import { projectPoweredPreviewOriginDecision } from './http/powered-preview-origin.js';
 import { registerLibraryRoutes } from './routes/library.js';
 import {
   libraryExtensionAllowedOrigins,
@@ -3460,10 +3460,23 @@ export async function startServer({
     /^\/projects\/[^/]+\/(?:raw|preview)\/|^\/codex-pets\/[^/]+\/spritesheet$|^\/asset-cache$/;
   const _POWERED_PREVIEW_SAFE_RE = /^\/projects\/[^/]+\/powered\/.+$/u;
 
-  // Reject cross-origin requests to API endpoints.
-  // Health/version remain open for monitoring probes.
-  // Non-browser clients (no Origin header) are always allowed.
+  // Reserve project preview hosts before API exceptions and static serving.
+  app.use((req, res, next) => {
+    const projectPreviewDecision = projectPoweredPreviewOriginDecision(req, resolvedPort);
+    if (projectPreviewDecision === 'reject') {
+      return res.status(403).json({
+        error: 'Powered preview origin cannot access this API route',
+      });
+    }
+    res.locals.projectPoweredPreview = projectPreviewDecision === 'allow';
+    next();
+  });
+
+  // Reject cross-origin requests to API endpoints. Normal non-browser
+  // clients (no Origin header) retain their existing access.
   app.use('/api', (req, res, next) => {
+    if (res.locals.projectPoweredPreview === true) return next();
+
     // Live artifact previews have stricter local-daemon validation and
     // loopback CORS handling on the route itself. Let that middleware produce
     // the structured error shape and preflight headers for preview embeds.
@@ -8697,9 +8710,9 @@ export async function startServer({
   // Powered-preview isolation info. Reports the daemon's own directly-reachable
   // http origin so the web host can render WebGL/Worker/WASM/SharedArrayBuffer
   // artifacts in a cross-origin-isolated iframe (see the /powered route and
-  // apps/web/src/runtime/powered-preview.ts). The web host always swaps this
-  // loopback hostname before loading powered files; the /api origin middleware
-  // then treats that swapped browser origin as preview-only.
+  // apps/web/src/runtime/powered-preview.ts). The web host derives a separate
+  // loopback hostname per project; the /api origin middleware reserves each
+  // hostname for that project's powered GETs.
   app.get('/api/preview/isolation', (_req, res) => {
     const reportHost = reportHostForPoweredPreview();
     const baseOrigin = resolvedPort ? `http://${reportHost}:${resolvedPort}` : null;
@@ -8707,6 +8720,7 @@ export async function startServer({
     /** @type {import('@open-design/contracts').ProjectPreviewIsolationResponse} */
     const body = {
       supported: Boolean(baseOrigin),
+      projectOrigins: true,
       baseOrigin,
       pathPrefix: 'powered',
     };
@@ -10334,9 +10348,6 @@ export async function startServer({
     platformHintSignal,
     devicePlatformSignal = null,
     frozenSkillPackage,
-    odNextSyntheticCanary = false,
-    odNextAutomaticAdmission = false,
-    runtimeCapabilitySnapshot,
   }) => {
     const project =
       typeof projectId === 'string' && projectId
@@ -11003,23 +11014,13 @@ export async function startServer({
     }
 
     // Strategy identity, package/profile drift checks, atom loading, runtime
-    // capability facts, and local-only synthetic policy are owned by the OD
-    // Next prompt service. This composition root only supplies detected runtime
-    // versions and process configuration.
+    // profile selection are owned by the OD Next prompt service.
     const odNextStrategyRecipe = await resolveOdNextPromptRecipeForRun({
       db,
       bundledPluginsDir: BUNDLED_PLUGINS_DIR,
       appliedPluginSnapshotId,
-      agentId,
       streamFormat,
       atomPromptsEnabled: bundledAtomPromptsEnabled,
-      syntheticCanary: odNextSyntheticCanary,
-      automaticAdmission: odNextAutomaticAdmission,
-      runtimeCapabilitySnapshot,
-      getRuntimeVersions: () => ensureDetectedRuntimeVersions(
-        agentId,
-        agentCliEnvForAgent(appConfigForPrompt?.agentCliEnv, agentId),
-      ),
     });
 
     // Hoisted verbatim out of the composeSystemPrompt() call so the exact same
@@ -11210,7 +11211,6 @@ export async function startServer({
       assertOdNextSemanticRequestFactProducerCoverage('daemon_system_prompt', {
         strategy_task_skill: odNextStrategyRecipe.taskSkill,
         strategy_task_type: odNextStrategyRecipe.taskType,
-        strategy_runtime_capability_facts: odNextStrategyRecipe.planningFacts,
         project_and_design_context: {
           metadata,
           template,
@@ -11232,18 +11232,14 @@ export async function startServer({
       ? composeOdNextStrategyCorePromptV2(odNextStrategyRecipe)
       : composeSystemPrompt(systemPromptInputs);
     // OD Next sends a canonical XML tree, not this Markdown string. The tree's
-    // cache-stable head, its per-task identity, and the runtime-owned planning
-    // facts are three separate products of the same verified recipe, so they are
-    // composed here together and placed in different bundle slots downstream.
+    // cache-stable head and per-task identity are composed here together and
+    // placed in their existing bundle slots downstream.
     const odNextBundleHead = odNextStrategyRecipe
       ? composeOdNextStrategyBundleHeadV2(odNextStrategyRecipe)
       : null;
     const odNextRecipeIdentity = odNextStrategyRecipe
       ? odNextStrategyRecipeIdentityV2(odNextStrategyRecipe)
       : null;
-    const odNextRuntimeFacts = odNextStrategyRecipe
-      ? renderOdNextRuntimeFactsV2(odNextStrategyRecipe, odNextStableRequestContext ?? {})
-      : '';
     // The chat handler also needs to know where the active skill lives
     // on disk so it can stage a per-project copy of its side files
     // before spawning the agent. Returning that here avoids a second
@@ -11254,7 +11250,7 @@ export async function startServer({
       prompt,
       odNextBundleHead,
       odNextRecipeIdentity,
-      odNextRuntimeFacts,
+      odNextRuntimeFacts: '',
       odNextStableContextPrompt: odNextStableRequestContext
         ? composeOdNextStrategyStableRequestContextV2(
             odNextStableRequestContext,
@@ -16888,8 +16884,8 @@ export async function startServer({
         ));
         return finishWithRetryDecision('failed', 0, signal);
       }
-      // ACP agents that don't shut down on stdin.end() (e.g. Devin for
-      // Terminal) are forced to exit via SIGTERM from attachAcpSession after
+      // Native agents that don't shut down on stdin.end() (e.g. Devin or Pi)
+      // are forced to exit via SIGTERM after
       // a clean prompt completion. Without an override, the chat run would
       // be marked `failed` because `code === 0` fails (code is null on a
       // signal exit). `completedSuccessfully()` reports whether the ACP
@@ -16910,7 +16906,10 @@ export async function startServer({
         code,
         signal,
         acpCleanCompletion,
-        acpCompletionShutdownRequested,
+        acpCompletionShutdownRequested: acpCompletionShutdownRequested || (
+          typeof acpSession?.completionShutdownRequested === 'function' &&
+          acpSession.completionShutdownRequested()
+        ),
         artifactQuietShutdownRequested,
         turnCompletedCleanly: !!run.turnCompletedCleanly,
         artifactProducedThisRun:
