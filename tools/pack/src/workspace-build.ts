@@ -41,21 +41,18 @@ export const WORKSPACE_BUILD_COMMANDS = [
       "--filter", "@open-design/packaged^...",
       "--workspace-concurrency=1", "--if-present", "run", "build",
     ],
-    env: ["OD_WEB_OUTPUT_MODE"],
+    env: ["OD_WEB_OUTPUT_MODE", "OD_WEB_TYPECHECK=external"],
   },
   { args: ["--filter", "@open-design/web", "run", "build:sidecar"] },
   { args: ["--filter", "@open-design/packaged", "run", "build"] },
 ] as const;
 
-export const WORKSPACE_BUILD_CACHE_SCHEMA_VERSION = 11;
+export const WORKSPACE_BUILD_CACHE_SCHEMA_VERSION = 12;
 
 /**
  * V8 old-space ceiling (MB) for the packaged closure build, the stage that runs
- * `next build` for apps/web. Next type-checks apps/web in-process against the
- * app tsconfig (src and tests alike), and since the Home entry refresh (#8208)
- * that pass needs more than Node's 2 GB default: on GitHub's macos-14 and
- * macos-15-intel runners it dies deterministically with "JavaScript heap out of
- * memory" during "Running TypeScript". 4 GB fits the 7 GB runners. The ceiling
+ * `next build` for apps/web. Type validation runs independently, but bundling
+ * still needs headroom beyond Node's default. 4 GB fits the 7 GB runners. The ceiling
  * changes how much memory the build may use, never what it emits, so it is not
  * a cache-key determinant and does not bump the schema version.
  */
@@ -174,6 +171,7 @@ export async function runWorkspaceBuild(
       {
         NODE_OPTIONS: workspaceBuildNodeOptions(process.env.NODE_OPTIONS),
         OD_WEB_OUTPUT_MODE: config.webOutputMode,
+        OD_WEB_TYPECHECK: "external",
       },
     );
     await runPnpm([...WORKSPACE_BUILD_COMMANDS[2].args]);

@@ -38,14 +38,9 @@
     "sidecar/**/*",
     "src/**/*",
     "tests/**/*",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    "out/types/**/*.ts",
-    "out/dev/types/**/*.ts"
+    ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "out",
-    ".next"
+    "node_modules"
   ]
 }

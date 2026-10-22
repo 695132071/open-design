@@ -215,7 +215,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: WORKSPACE_ROOT,
   },
-  ...(DEV_TSCONFIG_PATH ? { typescript: { tsconfigPath: DEV_TSCONFIG_PATH } } : {}),
+  typescript: {
+    tsconfigPath: DEV_TSCONFIG_PATH ?? (isProd ? 'tsconfig.build.json' : 'tsconfig.json'),
+    // tools-pack delegates validation to the same-commit CI/release typecheck.
+    // Ordinary `next build` still checks production sources locally.
+    ignoreBuildErrors: process.env.OD_WEB_TYPECHECK === 'external',
+  },
   // Static exports keep Next.js's default `out/` output directory so static
   // hosts like Vercel can publish the generated site directly. Server runtimes
   // still keep a predictable traced build directory for sidecar launchers.

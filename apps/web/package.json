@@ -24,7 +24,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "build:sidecar": "tsc -p tsconfig.sidecar.json",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "next typegen && tsc -b --noEmit",
     "test": "vitest run -c vitest.config.ts --maxWorkers=2"
   },
   "dependencies": {
