@@ -1194,6 +1194,8 @@ export interface Dict {
   'comment.unsentDiscardNotice': string;
   'comment.anchorState.reanchored': string;
   'comment.anchorState.stale': string;
+  'comment.saveTargetMissing': string;
+  'comment.savePreviewNotReady': string;
   'comment.anchorState.lost': string;
   'collabPresence.viewingFileSelf': string;
   'collabPresence.viewingFileOther': string;

@@ -5517,5 +5517,7 @@ export const pl: Dict = {
   'comment.unsentDiscardNotice': 'Masz niewysłany komentarz. Kliknij ponownie, aby go odrzucić i przełączyć.',
   'comment.anchorState.reanchored': 'na podstawie starszej wersji',
   'comment.anchorState.stale': 'kotwica mogła zostać przeniesiona',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'kotwica utracona',
 };

@@ -5517,5 +5517,7 @@ export const it: Dict = {
   'comment.unsentDiscardNotice': 'Hai un commento non inviato. Fai di nuovo clic per scartarlo e cambiare.',
   'comment.anchorState.reanchored': 'basato su una versione precedente',
   'comment.anchorState.stale': 'l’ancora potrebbe essere stata spostata',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'ancora persa',
 };

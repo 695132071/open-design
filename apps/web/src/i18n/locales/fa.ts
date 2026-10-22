@@ -850,6 +850,8 @@ export const fa: Dict = {
   'comment.unsentDiscardNotice': 'یک دیدگاه ارسال‌نشده دارید. برای دور انداختن آن و جابه‌جایی دوباره کلیک کنید.',
   'comment.anchorState.reanchored': 'بر اساس نسخه قدیمی‌تر',
   'comment.anchorState.stale': 'ممکن است لنگر جابه‌جا شده باشد',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'لنگر گم شده است',
   'collabPresence.viewingFileSelf': 'You are viewing {file}',
   'collabPresence.viewingFileOther': 'Viewing {file}',

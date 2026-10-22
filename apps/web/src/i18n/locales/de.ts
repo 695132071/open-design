@@ -850,6 +850,8 @@ export const de: Dict = {
   'comment.unsentDiscardNotice': 'Du hast einen nicht gesendeten Kommentar. Klicke erneut, um ihn zu verwerfen und zu wechseln.',
   'comment.anchorState.reanchored': 'basierend auf einer älteren Version',
   'comment.anchorState.stale': 'Anker könnte verschoben worden sein',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'Anker verloren',
   'collabPresence.viewingFileSelf': 'You are viewing {file}',
   'collabPresence.viewingFileOther': 'Viewing {file}',

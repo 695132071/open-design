@@ -5961,5 +5961,7 @@ export const zhCN: Dict = {
   'comment.unsentDiscardNotice': '有未发送的评论。再次点击将丢弃并切换。',
   'comment.anchorState.reanchored': '基于旧版本',
   'comment.anchorState.stale': '锚点可能已移动',
+  'comment.saveTargetMissing': '评论目标已不存在，请重新选择元素；草稿已保留。',
+  'comment.savePreviewNotReady': '预览正在刷新，草稿已保留，请在刷新完成后重试保存。',
   'comment.anchorState.lost': '锚点已丢失',
 };

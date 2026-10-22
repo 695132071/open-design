@@ -850,6 +850,8 @@ export const en: Dict = {
   'comment.unsentDiscardNotice': 'You have an unsent comment. Click again to discard it and switch.',
   'comment.anchorState.reanchored': 'based on an older version',
   'comment.anchorState.stale': 'anchor may have moved',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'anchor lost',
   'collabPresence.viewingFileSelf': 'You are viewing {file}',
   'collabPresence.viewingFileOther': 'Viewing {file}',

@@ -5517,5 +5517,7 @@ export const ja: Dict = {
   'comment.unsentDiscardNotice': '未送信のコメントがあります。もう一度クリックすると破棄して切り替えます。',
   'comment.anchorState.reanchored': '古いバージョンに基づく',
   'comment.anchorState.stale': 'アンカーが移動した可能性があります',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'アンカーが失われました',
 };

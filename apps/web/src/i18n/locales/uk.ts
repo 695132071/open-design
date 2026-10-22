@@ -5517,5 +5517,7 @@ export const uk: Dict = {
   'comment.unsentDiscardNotice': 'У вас є ненадісланий коментар. Натисніть ще раз, щоб відхилити його й перемкнутися.',
   'comment.anchorState.reanchored': 'на основі старішої версії',
   'comment.anchorState.stale': 'якір міг переміститися',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'якір втрачено',
 };

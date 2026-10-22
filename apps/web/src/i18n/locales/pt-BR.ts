@@ -5517,5 +5517,7 @@ export const ptBR: Dict = {
   'comment.unsentDiscardNotice': 'Você tem um comentário não enviado. Clique novamente para descartá-lo e trocar.',
   'comment.anchorState.reanchored': 'com base em uma versão anterior',
   'comment.anchorState.stale': 'a âncora pode ter sido movida',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'âncora perdida',
 };

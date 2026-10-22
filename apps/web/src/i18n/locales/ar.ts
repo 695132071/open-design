@@ -850,6 +850,8 @@ export const ar: Dict = {
   'comment.unsentDiscardNotice': 'لديك تعليق لم يُرسل بعد. انقر مرة أخرى لتجاهله والتبديل.',
   'comment.anchorState.reanchored': 'استنادًا إلى إصدار أقدم',
   'comment.anchorState.stale': 'قد يكون موضع الارتساء قد تغيّر',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'فُقد موضع الارتساء',
   'collabPresence.viewingFileSelf': 'You are viewing {file}',
   'collabPresence.viewingFileOther': 'Viewing {file}',

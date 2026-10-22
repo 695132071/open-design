@@ -5517,5 +5517,7 @@ export const tr: Dict = {
   'comment.unsentDiscardNotice': 'Gönderilmemiş bir yorumunuz var. Onu silip geçiş yapmak için tekrar tıklayın.',
   'comment.anchorState.reanchored': 'eski bir sürüme göre',
   'comment.anchorState.stale': 'bağlantı noktası taşınmış olabilir',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'bağlantı noktası kayboldu',
 };

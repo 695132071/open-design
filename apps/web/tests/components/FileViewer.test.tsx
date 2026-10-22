@@ -10379,13 +10379,8 @@ describe('FileViewer tweaks toolbar', () => {
     });
   });
 
-  // The freeze / deferred-flush logic covers every interactive preview mode
-  // (`annotationFreezeActive` = Draw || Comment || Inspect; the URL freeze also
-  // covers manual Edit). Pin the non-Draw branches so a regression in any one
-  // can't slip through green. Inspect shares the exact `annotationFreezeActive`
-  // path as Comment and has no toggle in this prototype surface, so Comment
-  // stands in for both.
-  it('holds the preview steady while Comment mode is open instead of live-reloading on a file change', async () => {
+  // Comment mode follows live content; manual Edit keeps its existing freeze.
+  it('refreshes the preview while Comment mode stays open on a file change', async () => {
     const { rerender } = render(
       <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile({ mtime: 1000 })}
         liveHtml='<html><body><main data-od-id="hero">Comment V1</main></body></html>'
@@ -10407,8 +10402,8 @@ describe('FileViewer tweaks toolbar', () => {
     await Promise.resolve();
 
     const f = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    expect(f.srcdoc).toContain('Comment V1');
-    expect(f.srcdoc).not.toContain('Comment V2');
+    expect(f.srcdoc).toContain('Comment V2');
+    expect(f.srcdoc).not.toContain('Comment V1');
   });
 
   it('holds the preview steady while manual Edit is open instead of live-reloading on a file change', async () => {
@@ -12705,6 +12700,17 @@ describe('FileViewer tweaks toolbar', () => {
       },
     }));
 
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data: unknown) => {
+      const request = data as { validateForSave?: boolean; requestId: string; selector: string };
+      if (!request.validateForSave) return;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+        data: { type: 'od:comment-active-target-update', documentVersion: frame.dataset.odRenderMode === 'srcdoc'
+            ? `srcdoc:${new DOMParser().parseFromString(frame.srcdoc, 'text/html').querySelector('template[data-od-srcdoc-transport-body-complete]')?.getAttribute('data-od-srcdoc-transport-body-complete') ?? ''}`
+            : `url:${frame.src}`, requestId: request.requestId,
+          requestedSelector: request.selector, selector: '[data-od-id="hero"]', elementId: 'hero',
+          position: { x: 8, y: 12, width: 120, height: 48 } } })));
+    });
+
     const input = await screen.findByTestId('comment-popover-input');
     expect(screen.queryByTestId('comment-side-panel')).toBeNull();
     fireEvent.change(input, { target: { value: '加大字号' } });
@@ -12811,6 +12817,17 @@ describe('FileViewer tweaks toolbar', () => {
       },
     }));
 
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data: unknown) => {
+      const request = data as { validateForSave?: boolean; requestId: string; selector: string };
+      if (!request.validateForSave) return;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+        data: { type: 'od:comment-active-target-update', documentVersion: frame.dataset.odRenderMode === 'srcdoc'
+            ? `srcdoc:${new DOMParser().parseFromString(frame.srcdoc, 'text/html').querySelector('template[data-od-srcdoc-transport-body-complete]')?.getAttribute('data-od-srcdoc-transport-body-complete') ?? ''}`
+            : `url:${frame.src}`, requestId: request.requestId,
+          requestedSelector: request.selector, selector: '[data-od-id="hero"]', elementId: 'hero',
+          position: { x: 8, y: 12, width: 120, height: 48 } } })));
+    });
+
     const input = await screen.findByTestId('comment-popover-input');
     fireEvent.change(input, { target: { value: 'Third comment' } });
     fireEvent.click(screen.getByTestId('comment-popover-save'));
@@ -12852,6 +12869,17 @@ describe('FileViewer tweaks toolbar', () => {
         htmlHint: '<main data-od-id="hero">Hero</main>',
       },
     }));
+
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data: unknown) => {
+      const request = data as { validateForSave?: boolean; requestId: string; selector: string };
+      if (!request.validateForSave) return;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+        data: { type: 'od:comment-active-target-update', documentVersion: frame.dataset.odRenderMode === 'srcdoc'
+            ? `srcdoc:${new DOMParser().parseFromString(frame.srcdoc, 'text/html').querySelector('template[data-od-srcdoc-transport-body-complete]')?.getAttribute('data-od-srcdoc-transport-body-complete') ?? ''}`
+            : `url:${frame.src}`, requestId: request.requestId,
+          requestedSelector: request.selector, selector: '[data-od-id="hero"]', elementId: 'hero',
+          position: { x: 8, y: 12, width: 120, height: 48 } } })));
+    });
 
     const input = await screen.findByTestId('comment-popover-input');
     fireEvent.change(input, { target: { value: '加大字号' } });
@@ -12899,6 +12927,17 @@ describe('FileViewer tweaks toolbar', () => {
         htmlHint: '<main data-od-id="hero">Hero</main>',
       },
     }));
+
+    vi.spyOn(frame.contentWindow!, 'postMessage').mockImplementation((data: unknown) => {
+      const request = data as { validateForSave?: boolean; requestId: string; selector: string };
+      if (!request.validateForSave) return;
+      queueMicrotask(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow,
+        data: { type: 'od:comment-active-target-update', documentVersion: frame.dataset.odRenderMode === 'srcdoc'
+            ? `srcdoc:${new DOMParser().parseFromString(frame.srcdoc, 'text/html').querySelector('template[data-od-srcdoc-transport-body-complete]')?.getAttribute('data-od-srcdoc-transport-body-complete') ?? ''}`
+            : `url:${frame.src}`, requestId: request.requestId,
+          requestedSelector: request.selector, selector: '[data-od-id="hero"]', elementId: 'hero',
+          position: { x: 8, y: 12, width: 120, height: 48 } } })));
+    });
 
     const input = await screen.findByTestId('comment-popover-input') as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: '保留这个评论' } });

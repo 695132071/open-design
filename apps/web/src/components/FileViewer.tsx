@@ -1,3 +1,4 @@
+import { validateCommentSaveTarget } from '../comments/validate-save-target';
 import { previewStorageKey, readPreviewStorage, savePreviewStorageMessage } from '../runtime/preview-storage';
 import { commentSelectorsMatch, commentUsesIdentity, ownerCommentNeedsLocation, resolveOwnerCommentAnchor } from '../comments/owner-anchor';
 import { indexCommentTargets } from '../comments/target-index';
@@ -9514,6 +9515,7 @@ function HtmlViewer({
   });
   const composerHoldsUnsentWorkRef = useRef(composerHoldsUnsentWork);
   composerHoldsUnsentWorkRef.current = composerHoldsUnsentWork;
+  const commentReselectPendingRef = useRef(false);
   const composerDiscardArmedRef = useRef(false);
   const [composerDiscardPending, setComposerDiscardPending] = useState(false);
   const disarmComposerDiscard = useCallback(() => {
@@ -10392,9 +10394,9 @@ function HtmlViewer({
   const assetInliningSource = effectiveDeck ? deckVisualSource : source;
   // Annotation modes that should hold the preview still while open. Manual
   // Edit is handled by its own freeze just below; these are the non-edit
-  // passes (Mark/Draw, Comment, Inspect) that also must not be yanked out
+  // passes (Mark/Draw, Inspect) that also must not be yanked out
   // from under the user by a background file change.
-  const annotationFreezeActive = drawOverlayOpen || boardMode || inspectMode;
+  const annotationFreezeActive = drawOverlayOpen || inspectMode;
   // Freeze the iframe input on the snapshot taken at Edit-mode entry. Any
   // source rewrite during edit (1.5s debounced set-style patches) stays
   // invisible to the iframe — live updates flow through od-edit-preview-style
@@ -10873,7 +10875,7 @@ function HtmlViewer({
   // Hold the iframe URL still (it carries file.mtime) while the user is mid
   // annotation/edit, mirroring the source freeze above. Otherwise a
   // background file change bumps mtime → basePreviewSrcUrl → a URL-load
-  // reload right under an active mark/comment/edit/inspect. Captured once at
+  // reload right under an active mark/edit/inspect. Captured once at
   // mode entry via a ref and released on exit, so the deferred reload lands
   // exactly once when the user is done.
   const interactivePreviewModeActive = annotationFreezeActive || manualEditMode;
@@ -12697,26 +12699,18 @@ function HtmlViewer({
     && (resolveOwnerCommentAnchor(selectedLocationComment, liveCommentTargets, collab.publishedVersion ?? undefined).state === 'lost'
       || (missingCommentLocation?.commentId === selectedLocationComment.id && missingCommentLocation.previewKey === commentTargetsKey
         && missingCommentLocation.intent === commentLocationIntent)) ? selectedLocationComment.id : null;
-  const shareComposerComment = currentActiveComposerComment();
-  // A lost row's unchanged saved prefill is not unsaved work.
-  const unchangedLostCommentPrefill = !activeCommentTarget && lostSelectedCommentId !== null
-    && shareComposerComment?.id === lostSelectedCommentId
-    && commentDraft === shareComposerComment.note;
-  const shareDraftUnsettled = !unchangedLostCommentPrefill && (
-    Boolean(commentDraft.trim()) || Boolean(shareComposerComment && (activeCommentTarget || lostSelectedCommentId)
-      && commentDraft !== shareComposerComment.note)
-  );
   const guardShareSource = workspaceActive && !viewerOnly && Boolean(workspaceContext?.permissions.canWriteSyncedFiles)
     && !needsPowered && !passiveLargeHtmlPreview && liveHtml === undefined;
   const shareSourceSettled = !streaming && !manualEditMode && !manualEditDraftDirty
     && !manualEditSaving && !manualEditEntryHandoffPending && !manualEditExitHandoffPending
     && !manualEditPendingStyleRef.current && !inspectMode && !savingInspect && !drawOverlayOpen
-    && source !== null && !versionModalOpen && !filesRefreshPending && !shareDraftUnsettled && !queuedBoardNotes.length && !boardImages.length
-    && !sendingBoardBatch && !_speakerNotesSaving && !publishingPublicFile;
+    // Publication reads saved disk contents. Comment drafts and preview
+    // navigation do not change those bytes and must not block publication.
+    && source !== null && !versionModalOpen
+    && !_speakerNotesSaving && !publishingPublicFile;
   const shareSourceInputKey = useMemo(() => JSON.stringify([
-    source, reloadKey, file.mtime, filesRefreshKey, commentDraft, queuedBoardNotes,
-    boardImages.map(image => [image.name, image.size, image.lastModified]), manualEditDraft, speakerNotesDraft, workspaceActive,
-  ]), [source, reloadKey, file.mtime, filesRefreshKey, commentDraft, queuedBoardNotes, boardImages, manualEditDraft, speakerNotesDraft, workspaceActive]);
+    source, reloadKey, file.mtime, filesRefreshKey, manualEditDraft, speakerNotesDraft, workspaceActive,
+  ]), [source, reloadKey, file.mtime, filesRefreshKey, manualEditDraft, speakerNotesDraft, workspaceActive]);
   const shareSourceGuard = useShareSourceGuard({ projectId, fileName: file.name,
     context: workspaceContext ?? null, inputKey: shareSourceInputKey, settled: shareSourceSettled });
   const commentIdentityFrameReady = commentTargetsReadyKey === commentTargetsKey
@@ -12727,6 +12721,7 @@ function HtmlViewer({
   const commentTargetReportRevisionRef = useRef(0);
   useEffect(() => {
     setLiveCommentTargets(new Map());
+    setStrokePoints([]);
   }, [commentTargetsKey]);
 
   // Mirror the bridge's `od:comment-targets` broadcast into
@@ -12792,6 +12787,7 @@ function HtmlViewer({
   }, [inspectMode, boardMode, file.name, commentTargetsKey, isOurPreviewIframeSource, isActivePreviewIframeSource, workspaceActive]);
 
   useEffect(() => {
+    commentReselectPendingRef.current = false;
     setActiveCommentTarget(null);
     setHoveredCommentTarget(null);
     setLiveCommentTargets(new Map());
@@ -12920,7 +12916,7 @@ function HtmlViewer({
           if (!current) return null;
           if (current.selectionKind === 'pod') return current;
           const updated = next.get(current.elementId);
-          if (!updated || !isValidCommentOverlayPosition(updated.position)) return null;
+          if (!updated || !isValidCommentOverlayPosition(updated.position)) return composerHoldsUnsentWorkRef.current ? current : null;
           return commentSnapshotEqual(current, updated) ? current : updated;
         });
         setHoveredCommentTarget((current) => {
@@ -12946,7 +12942,7 @@ function HtmlViewer({
           // A completed locate or a newer target index supersedes this failure.
           if (request.scrolled || request.reportRevision !== commentTargetReportRevisionRef.current) return;
           setMissingCommentLocation({ commentId: request.commentId, previewKey: request.previewKey, intent: commentLocationIntent });
-          setActiveCommentTarget(null);
+          if (!composerHoldsUnsentWorkRef.current) setActiveCommentTarget(null);
           setHoveredCommentTarget(null);
           return;
         }
@@ -13053,6 +13049,14 @@ function HtmlViewer({
           setHoveredCommentTarget(snapshot);
           return;
         }
+        if (commentReselectPendingRef.current) {
+          commentReselectPendingRef.current = false;
+          setActiveCommentTarget(snapshot);
+          setHoveredCommentTarget(snapshot);
+          setCommentSavedToast(null);
+          disarmComposerDiscard();
+          return;
+        }
         requestComposerRetarget(() => {
           setActiveCommentTarget(snapshot);
           setHoveredCommentTarget(snapshot);
@@ -13111,6 +13115,7 @@ function HtmlViewer({
     if (!workspaceActive || !boardMode || !activePreviewCommentId) return;
     const comment = previewComments.find(item => item.id === activePreviewCommentId && item.filePath === file.name);
     if (!comment || !ownerCommentNeedsLocation(comment, collab.enabled)) return;
+    if (composerHoldsUnsentWorkRef.current) return;
     setActiveCommentTarget(null);
     setHoveredCommentTarget(null);
     if (commentTargetsReadyKey !== commentTargetsKey) return;
@@ -15272,6 +15277,7 @@ function HtmlViewer({
   }
 
   function clearBoardComposer() {
+    commentReselectPendingRef.current = false;
     disarmComposerDiscard();
     setActiveCommentTarget(null);
     setHoveredCommentTarget(null);
@@ -15493,7 +15499,6 @@ function HtmlViewer({
 
   async function sendBoardBatch() {
     if (!activeCommentTarget || !onSendBoardCommentAttachments) return;
-    if (activeCommentTarget.elementId.startsWith('cmt:') && !commentIdentityFrameReady) return;
     const existingComment = currentActiveComposerComment();
     const sendingUnchangedSavedComment = Boolean(
       existingComment
@@ -15504,8 +15509,10 @@ function HtmlViewer({
     if (existingComment && sendingUnchangedSavedComment) {
       setSendingBoardBatch(true);
       try {
+        const checked = await currentCommentSaveTarget(activeCommentTarget);
+        if (!checked) return;
         const result = await onSendBoardCommentAttachments(
-          commentsToAttachments([existingComment]),
+          commentsToAttachments([{ ...existingComment, ...withDeckSlideIndex(targetFromSnapshot(checked)) }]),
         );
         if (!commentSendCompleted(result, existingComment.id)) return;
         clearBoardComposer();
@@ -15519,9 +15526,11 @@ function HtmlViewer({
     if (nextNotes.length === 0 && boardImages.length === 0) return;
     setSendingBoardBatch(true);
     try {
+      const checked = await currentCommentSaveTarget(activeCommentTarget);
+      if (!checked) return;
       const existingAttachments = currentActiveComposerAttachments();
       const attachments = buildBoardCommentAttachments({
-        target: withDeckSlideIndex(targetFromSnapshot(activeCommentTarget)),
+        target: withDeckSlideIndex(targetFromSnapshot(checked)),
         notes: nextNotes,
         includeImageOnly: boardImages.length > 0,
         imageAttachmentCount: boardImages.length,
@@ -15551,15 +15560,31 @@ function HtmlViewer({
     }
   }
 
+  async function currentCommentSaveTarget(snapshot: PreviewCommentSnapshot) {
+    // Free-position and area notes do not refer to one DOM element.
+    if (snapshot.elementId.startsWith('pin-') || snapshot.elementId.startsWith('file-comment-') || snapshot.selectionKind === 'pod') return snapshot;
+    const checked = await validateCommentSaveTarget(iframeRef.current, snapshot, () =>
+      useUrlLoadPreview ? `url:${iframeRef.current?.src ?? ''}`
+        : `srcdoc:${expectedSrcDocTransportGenerationRef.current}`);
+    if (checked === 'missing' || checked === 'unavailable') {
+      commentReselectPendingRef.current = checked === 'missing';
+      setCommentSavedToast(t(checked === 'missing' ? 'comment.saveTargetMissing' : 'comment.savePreviewNotReady'));
+      return null;
+    }
+    commentReselectPendingRef.current = false;
+    return checked;
+  }
+
   async function savePersistentComment() {
     if (!activeCommentTarget || !onSavePreviewComment) return;
-    if (activeCommentTarget.elementId.startsWith('cmt:') && !commentIdentityFrameReady) return;
     // Allow saving when there is text OR an attached image (image-only notes).
     if (!commentDraft.trim() && boardImages.length === 0 && currentActiveComposerAttachments().length === 0) return;
     const isFreePin = activeCommentTarget.elementId.startsWith('pin-');
     setSendingBoardBatch(true);
     try {
-      const target = withDeckSlideIndex(targetFromSnapshot(activeCommentTarget));
+      const checked = await currentCommentSaveTarget(activeCommentTarget);
+      if (!checked) return;
+      const target = withDeckSlideIndex(targetFromSnapshot(checked));
       const saved = await onSavePreviewComment(
         target,
         commentDraft.trim(),
@@ -15582,24 +15607,25 @@ function HtmlViewer({
 
   async function savePanelComment(note: string) {
     if (!onSavePreviewComment) return false;
-    if (activeCommentTarget?.elementId.startsWith('cmt:') && !commentIdentityFrameReady) return false;
     const cleanNote = note.trim();
     if (!cleanNote) return false;
-    const idSeed = Date.now().toString(36);
-    const target: PreviewCommentTarget = activeCommentTarget
-      ? targetFromSnapshot(activeCommentTarget)
-      : {
-          filePath: file.name,
-          elementId: `file-comment-${idSeed}-${Math.floor(Math.random() * 1e6).toString(36)}`,
-          selector: 'html',
-          label: file.name,
-          text: '',
-          position: { x: 0, y: 0, width: 0, height: 0 },
-          htmlHint: '',
-          selectionKind: 'element',
-        };
     setSendingBoardBatch(true);
     try {
+      const checked = activeCommentTarget ? await currentCommentSaveTarget(activeCommentTarget) : null;
+      if (activeCommentTarget && !checked) return false;
+      const idSeed = Date.now().toString(36);
+      const target: PreviewCommentTarget = checked
+        ? targetFromSnapshot(checked)
+        : {
+            filePath: file.name,
+            elementId: `file-comment-${idSeed}-${Math.floor(Math.random() * 1e6).toString(36)}`,
+            selector: 'html',
+            label: file.name,
+            text: '',
+            position: { x: 0, y: 0, width: 0, height: 0 },
+            htmlHint: '',
+            selectionKind: 'element',
+          };
       const saved = await onSavePreviewComment(target, cleanNote, false);
       if (saved) {
         setCommentSavedToast(t('chat.comments.savedToast'));
@@ -18008,7 +18034,11 @@ function HtmlViewer({
                           onLoad={() => {
                             const frame = urlPreviewIframeRef.current;
                             markManualEditUrlStandbyReady(frame);
-                            if (useUrlLoadPreview) iframeRef.current = frame;
+                            if (useUrlLoadPreview) {
+                              iframeRef.current = frame;
+                              // A new document cannot finish the old in-progress lasso.
+                              setStrokePoints([]);
+                            }
                             if (frame) frame.dataset.odLoadedSrc = frame.getAttribute('src') ?? '';
                             if (frame) {
                               frame.dataset.odLoadedPreviewEpoch =
@@ -18056,7 +18086,11 @@ function HtmlViewer({
                           onLoad={() => {
                             const frame = urlPreviewIframeRef.current;
                             markManualEditUrlStandbyReady(frame);
-                            if (useUrlLoadPreview) iframeRef.current = frame;
+                            if (useUrlLoadPreview) {
+                              iframeRef.current = frame;
+                              // A new document cannot finish the old in-progress lasso.
+                              setStrokePoints([]);
+                            }
                             if (frame) frame.dataset.odLoadedSrc = frame.getAttribute('src') ?? '';
                             if (frame) {
                               frame.dataset.odLoadedPreviewEpoch =

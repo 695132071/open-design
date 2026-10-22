@@ -5517,5 +5517,7 @@ export const th: Dict = {
   'comment.unsentDiscardNotice': 'คุณมีความคิดเห็นที่ยังไม่ได้ส่ง คลิกอีกครั้งเพื่อละทิ้งและสลับ',
   'comment.anchorState.reanchored': 'อ้างอิงจากเวอร์ชันเก่า',
   'comment.anchorState.stale': 'จุดยึดอาจถูกย้ายแล้ว',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'ไม่พบจุดยึด',
 };

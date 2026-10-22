@@ -5517,5 +5517,7 @@ export const ru: Dict = {
   'comment.unsentDiscardNotice': 'У вас есть неотправленный комментарий. Нажмите ещё раз, чтобы отменить его и переключиться.',
   'comment.anchorState.reanchored': 'на основе более ранней версии',
   'comment.anchorState.stale': 'привязка могла переместиться',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'привязка потеряна',
 };

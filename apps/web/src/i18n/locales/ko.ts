@@ -5517,5 +5517,7 @@ export const ko: Dict = {
   'comment.unsentDiscardNotice': '보내지 않은 댓글이 있습니다. 다시 클릭하면 삭제하고 전환합니다.',
   'comment.anchorState.reanchored': '이전 버전을 기준으로 함',
   'comment.anchorState.stale': '앵커가 이동했을 수 있습니다',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': '앵커를 찾을 수 없습니다',
 };

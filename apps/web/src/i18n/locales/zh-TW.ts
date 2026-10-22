@@ -5968,5 +5968,7 @@ export const zhTW: Dict = {
   'comment.unsentDiscardNotice': '有尚未送出的評論。再次點擊將捨棄並切換。',
   'comment.anchorState.reanchored': '基於較舊版本',
   'comment.anchorState.stale': '錨點可能已移動',
+  'comment.saveTargetMissing': '評論目標已不存在，請重新選擇元素；草稿已保留。',
+  'comment.savePreviewNotReady': '預覽正在重新整理，草稿已保留，請在完成後重試儲存。',
   'comment.anchorState.lost': '錨點已遺失',
 };

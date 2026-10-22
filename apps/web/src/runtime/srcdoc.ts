@@ -2061,17 +2061,17 @@ function meaningfulDomFallbackTarget(el) {
   function generatedRootAnnotation(el, id){
     return id === 'path-0' && el && el.parentElement === document.body && el.id === 'root';
   }
-  function targetFrom(el, allowDomFallback, clickedEl, clickPoint, forceCommentIdentity){
+  function targetFrom(el, allowDomFallback, clickedEl, clickPoint, validateForSave){
     var id = annotatedElementIdFor(el);
     var selector = annotatedSelectorFor(el, esc);
-    if ((forceCommentIdentity || (commentEnabled && !inspectEnabled)) && (!clickedEl || clickedEl === el) && el && el.hasAttribute('data-od-comment-id')) {
+    if ((validateForSave || (commentEnabled && !inspectEnabled)) && (!clickedEl || clickedEl === el) && el && el.hasAttribute('data-od-comment-id')) {
       var identity = ownCommentIdentity(el);
       if (!identity) return null;
       id = identity.elementId;
       selector = identity.selector;
     }
-    if (allowDomFallback && id && generatedRootAnnotation(el, id)) return null;
-    if (!id && allowDomFallback && meaningfulDomFallbackTarget(el)) {
+    if (!validateForSave && allowDomFallback && id && generatedRootAnnotation(el, id)) return null;
+    if (!id && allowDomFallback && (validateForSave || meaningfulDomFallbackTarget(el))) {
       selector = domSelectorFor(el);
       if (selector) id = 'dom:' + selector;
     }
@@ -2655,6 +2655,15 @@ function meaningfulDomFallbackTarget(el) {
       if (frame) frame.scrollTo(Number(data.frameLeft || 0), Number(data.frameTop || 0));
       if (el) el.scrollTo(Number(data.canvasLeft || 0), Number(data.canvasTop || 0));
       setTimeout(postPreviewScroll, 0);
+      return;
+    }
+    if (data.type === 'od:comment-active-target' && data.validateForSave && typeof data.requestId === 'string') {
+      var saveNode = null;
+      try { saveNode = document.querySelector(String(data.selector)); } catch (_) {}
+      var saveTarget = saveNode && targetFrom(saveNode, true, null, null, true);
+      window.parent.postMessage(saveTarget
+        ? Object.assign({}, saveTarget, { type: 'od:comment-active-target-update', documentVersion: 'srcdoc:' + runtimeStateGeneration, requestId: data.requestId, requestedSelector: data.selector })
+        : { type: 'od:comment-location-missing', documentVersion: 'srcdoc:' + runtimeStateGeneration, requestId: data.requestId }, '*');
       return;
     }
     if (data.type === 'od:comment-active-target') {

@@ -1431,6 +1431,61 @@ describe('GET /api/projects/:id/raw/* range request route', () => {
     }
   });
 
+  it('URL comment save validates the live selector without requiring the old identity', async () => {
+    const response = await fetch(`${rawUrl('body.html')}?odPreviewBridge=selection`);
+    const bridge = load(await response.text())('script[data-od-url-selection-bridge]').text();
+    const dom = new JSDOM('<body><button data-od-id="new">Changed copy</button></body>', {
+      url: rawUrl('body.html'), runScripts: 'outside-only', pretendToBeVisual: true,
+    });
+    try {
+      dom.window.eval(`window.posted=[]; window.postMessage=data=>window.posted.push(data);
+        document.querySelector('button').getBoundingClientRect=()=>new DOMRect(0,0,100,40);`);
+      dom.window.eval(bridge);
+      const result = dom.window.eval(`(()=>{
+        var query={type:'od:comment-active-target',validateForSave:true,elementId:'old-id',selector:'body > button:nth-of-type(1)',requestId:'save'};
+        window.dispatchEvent(new MessageEvent('message',{data:query}));
+        var found=window.posted.at(-1);
+        var navigationResults=[];
+        window.location.hash='section';
+        window.dispatchEvent(new MessageEvent('message',{data:query}));
+        navigationResults.push(window.posted.at(-1));
+        history.pushState({},'', '?view=next#section');
+        window.dispatchEvent(new MessageEvent('message',{data:query}));
+        navigationResults.push(window.posted.at(-1));
+        history.replaceState({},'', '?view=last');
+        window.dispatchEvent(new MessageEvent('message',{data:query}));
+        navigationResults.push(window.posted.at(-1));
+        window.dispatchEvent(new MessageEvent('message',{data:{type:'od:comment-mode',enabled:true,mode:'picker'}}));
+        document.querySelector('button').setAttribute('data-od-comment-id','12345678-1234-4234-8234-123456789abc');
+        window.dispatchEvent(new MessageEvent('message',{data:query}));
+        var replacement=window.posted.at(-1);
+        document.querySelector('button').remove();
+        window.dispatchEvent(new MessageEvent('message',{data:query}));
+        var missing=window.posted.at(-1);
+        var fallbackResults=['span','div'].map(function(tag){
+          document.body.innerHTML='<'+tag+'>Original</'+tag+'>';
+          var node=document.querySelector(tag);
+          node.getBoundingClientRect=()=>new DOMRect(0,0,100,40);
+          node.innerHTML=tag==='span'?'':'<span>A</span><span>B</span>';
+          window.dispatchEvent(new MessageEvent('message',{data:Object.assign({},query,{selector:'body > '+tag+':nth-of-type(1)'})}));
+          return window.posted.at(-1);
+        });
+        return {found,navigationResults,replacement,missing,fallbackResults};
+      })()`);
+      expect(result).toMatchObject({ fallbackResults: [
+        { type: 'od:comment-active-target-update', text: '' },
+        { type: 'od:comment-active-target-update', text: 'AB' },
+      ] });
+      expect(result).toMatchObject({ navigationResults: Array.from({ length: 3 }, () => ({
+        type: 'od:comment-active-target-update', documentVersion: `url:${rawUrl('body.html')}`, elementId: 'new',
+      })) });
+      expect(result).toMatchObject({ found: { type: 'od:comment-active-target-update', documentVersion: `url:${rawUrl('body.html')}`, elementId: 'new', text: 'Changed copy' },
+        replacement: { elementId: 'cmt:12345678-1234-4234-8234-123456789abc',
+          selector: '[data-od-comment-id="12345678-1234-4234-8234-123456789abc"]', requestedSelector: 'body > button:nth-of-type(1)' },
+        missing: { type: 'od:comment-location-missing', requestId: 'save' } });
+    } finally { dom.window.close(); }
+  });
+
   it('URL served complete bridge strictly describes and locates persisted comment identities', async () => {
     const response = await fetch(`${rawUrl('body.html')}?odPreviewBridge=selection`);
     expect(response.status).toBe(200);

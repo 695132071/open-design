@@ -5517,5 +5517,7 @@ export const id: Dict = {
   'comment.unsentDiscardNotice': 'Ada komentar yang belum dikirim. Klik lagi untuk membuangnya dan beralih.',
   'comment.anchorState.reanchored': 'berdasarkan versi lama',
   'comment.anchorState.stale': 'jangkar mungkin telah berpindah',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'jangkar hilang',
 };

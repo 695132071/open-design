@@ -5517,5 +5517,7 @@ export const hu: Dict = {
   'comment.unsentDiscardNotice': 'Van egy el nem küldött megjegyzésed. Kattints újra az elvetéséhez és a váltáshoz.',
   'comment.anchorState.reanchored': 'egy korábbi verzió alapján',
   'comment.anchorState.stale': 'a horgony elmozdulhatott',
+  'comment.saveTargetMissing': 'The comment target no longer exists. Select an element again; your draft is kept.',
+  'comment.savePreviewNotReady': 'The preview is refreshing. Your draft is kept; try saving again when it is ready.',
   'comment.anchorState.lost': 'a horgony elveszett',
 };
