@@ -58,7 +58,10 @@ jobs:
       suite: p0
   e2e_vitest:
     name: E2E Vitest
-    runs-on: ubuntu-latest
+    # Playwright 1.60.0 does not support Ubuntu 26.04, which ubuntu-latest
+    # began resolving to during prerelease validation. Pin the supported image
+    # so browser installation and E2E runtime startup stay reproducible.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout
