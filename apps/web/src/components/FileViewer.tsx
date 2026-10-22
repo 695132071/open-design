@@ -1760,6 +1760,8 @@ interface Props {
   filesRefreshKey?: number;
   isDeck?: boolean;
   streaming?: boolean;
+  /** Actual run state; unlike streaming, excludes read-only/loading UI locks. */
+  motionPreviewMuted?: boolean;
   commentQueueOnSend?: boolean;
   commentSendDisabled?: boolean;
   previewComments?: PreviewComment[];
@@ -1873,6 +1875,7 @@ export const FileViewer = memo(function FileViewer({
   filesRefreshKey = 0,
   isDeck,
   streaming,
+  motionPreviewMuted = false,
   commentQueueOnSend = false,
   commentSendDisabled = false,
   previewComments = [],
@@ -1988,6 +1991,7 @@ export const FileViewer = memo(function FileViewer({
         filesRefreshKey={filesRefreshKey}
         isDeck={rendererMatch.renderer.id === 'deck-html'}
         streaming={Boolean(streaming)}
+        motionPreviewMuted={motionPreviewMuted}
         commentQueueOnSend={commentQueueOnSend}
         commentSendDisabled={commentSendDisabled}
         previewComments={previewComments}
@@ -7234,6 +7238,7 @@ function HtmlViewer({
   filesRefreshKey = 0,
   isDeck,
   streaming,
+  motionPreviewMuted = false,
   commentQueueOnSend = false,
   commentSendDisabled = false,
   previewComments = [],
@@ -7284,6 +7289,7 @@ function HtmlViewer({
   filesRefreshKey?: number;
   isDeck: boolean;
   streaming: boolean;
+  motionPreviewMuted?: boolean;
   commentQueueOnSend?: boolean;
   commentSendDisabled?: boolean;
   previewComments?: PreviewComment[];
@@ -17988,6 +17994,7 @@ function HtmlViewer({
                             : `artifact-preview-frame-retained-${file.name}`}
                           data-od-render-mode="url-load"
                           data-od-active={mode === 'preview' && useUrlLoadPreview ? 'true' : 'false'}
+                          data-od-motion-muted={motionPreviewMuted ? 'true' : 'false'}
                           data-od-motion-active={workspaceActive && mode === 'preview' && useUrlLoadPreview ? 'true' : 'false'}
                           data-od-handoff-visible={keepUrlPaintedDuringManualEditEntry ? 'true' : undefined}
                           data-od-handoff-pending={keepSrcDocPaintedDuringManualEditExit ? 'true' : undefined}
@@ -18035,6 +18042,7 @@ function HtmlViewer({
                             : `artifact-preview-frame-retained-${file.name}`}
                           data-od-render-mode="url-load"
                           data-od-active={mode === 'preview' && useUrlLoadPreview ? 'true' : 'false'}
+                          data-od-motion-muted={motionPreviewMuted ? 'true' : 'false'}
                           data-od-motion-active={workspaceActive && mode === 'preview' && useUrlLoadPreview ? 'true' : 'false'}
                           data-od-handoff-visible={keepUrlPaintedDuringManualEditEntry ? 'true' : undefined}
                           data-od-handoff-pending={keepSrcDocPaintedDuringManualEditExit ? 'true' : undefined}
@@ -18086,6 +18094,7 @@ function HtmlViewer({
                           : `artifact-preview-frame-srcdoc-retained-${file.name}`}
                         data-od-render-mode="srcdoc"
                         data-od-active={mode === 'preview' && !useUrlLoadPreview ? 'true' : 'false'}
+                        data-od-motion-muted={motionPreviewMuted ? 'true' : 'false'}
                         data-od-motion-active={workspaceActive && mode === 'preview' && !useUrlLoadPreview ? 'true' : 'false'}
                         data-od-handoff-visible={keepSrcDocPaintedDuringManualEditExit ? 'true' : undefined}
                         data-od-handoff-pending={keepUrlPaintedDuringManualEditEntry ? 'true' : undefined}
