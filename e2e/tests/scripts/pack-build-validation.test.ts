@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
+
 import { describe, expect, it } from "vitest";
 import { pruneWindowsCache } from "../../../.github/scripts/release/cache/windows.ts";
 
@@ -15,19 +15,34 @@ describe("packaged build validation", () => {
     const fixture = await mkdtemp(join(tmpdir(), "pack-typecheck-"));
     try {
       for (const file of ["tsconfig.json", "tsconfig.build.json"]) {
-        await writeFile(join(fixture, file), await readFile(join(root, "apps/web", file)));
+        const parsed = JSON.parse(await readFile(join(root, "apps/web", file), "utf8")) as {
+          include?: string[];
+          exclude?: string[];
+        };
+        await writeFile(join(fixture, file), JSON.stringify({
+          compilerOptions: { noEmit: true, strict: true, skipLibCheck: true, target: "ES2022" },
+          include: parsed.include,
+          exclude: parsed.exclude,
+        }));
       }
       for (const dir of ["tests", "src", "sidecar", ".next/types"]) await mkdir(join(fixture, dir), { recursive: true });
       for (const dir of ["tests", "src", "sidecar", ".next/types"]) {
         await writeFile(join(fixture, dir, "witness.ts"), "export const value: string = 123;\n");
       }
       const diagnostics = (config: string) => {
-        const parsed = ts.getParsedCommandLineOfConfigFile(join(fixture, config), { noLib: true, types: [] }, {
-          ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => { throw new Error("Invalid tsconfig"); },
-        })!;
-        const program = ts.createProgram(parsed.fileNames, parsed.options);
-        return program.getSemanticDiagnostics().filter((d) => d.code === 2322)
-          .map((d) => d.file!.fileName.replaceAll("\\", "/").slice(fixture.length + 1)).sort();
+        let output = "";
+        try {
+          output = execFileSync(join(root, "node_modules/.bin/tsc"), ["-p", config, "--noEmit", "--pretty", "false", "--incremental", "false"], {
+            cwd: fixture,
+            encoding: "utf8",
+          });
+        } catch (error) {
+          const err = error as { stdout?: string; stderr?: string };
+          output = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+        }
+        return [...output.matchAll(/(?:^|\n)(.+?)\(\d+,\d+\): error TS2322:/g)]
+          .map((match) => match[1]!.replaceAll("\\", "/"))
+          .sort();
       };
       expect(diagnostics("tsconfig.json")).toEqual([".next/types/witness.ts", "sidecar/witness.ts", "src/witness.ts", "tests/witness.ts"]);
       expect(diagnostics("tsconfig.build.json")).toEqual([".next/types/witness.ts", "src/witness.ts"]);
@@ -36,11 +51,11 @@ describe("packaged build validation", () => {
     } finally { await rm(fixture, { recursive: true, force: true }); }
   });
 
-  it("only skips embedded checking when explicitly delegated to independent validation", () => {
+  it("always skips Next's embedded checker so native TypeScript 7 remains the web type gate", () => {
     const read = (mode: string) => JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e",
       "const {default:config}=await import('./apps/web/next.config.ts'); console.log(JSON.stringify(config.typescript));"],
     { cwd: root, env: { ...process.env, NODE_ENV: "production", OD_WEB_TYPECHECK: mode, OD_WEB_TSCONFIG_PATH: "" }, encoding: "utf8" }));
-    expect(read("")).toEqual({ tsconfigPath: "tsconfig.build.json", ignoreBuildErrors: false });
+    expect(read("")).toEqual({ tsconfigPath: "tsconfig.build.json", ignoreBuildErrors: true });
     expect(read("external")).toEqual({ tsconfigPath: "tsconfig.build.json", ignoreBuildErrors: true });
   });
 });

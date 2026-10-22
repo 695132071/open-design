@@ -1,8 +1,25 @@
-import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
+import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
-import ts from "typescript";
+import { API } from "@typescript/native/unstable/sync";
+import * as ts from "@typescript/native/unstable/ast";
+import type { Node, SourceFile } from "@typescript/native/unstable/ast";
+import { describe, expect, it, vi } from "vitest";
 import { createStartupTiming, attachStartupReadyIpc } from "../../src/main/startup-timing.js";
+
+function withMainSource<T>(relativePath: string, run: (ast: SourceFile) => T): T {
+  const file = fileURLToPath(new URL(`../../src/main/${relativePath}`, import.meta.url));
+  const compiler = new API();
+  try {
+    using snapshot = compiler.updateSnapshot({ openFiles: [file] });
+    const ast = snapshot.getDefaultProjectForFile(file)?.program.getSourceFile(file);
+    if (!ast) throw new Error(`Native TypeScript could not parse ${file}`);
+    return run(ast);
+  } finally {
+    compiler.close();
+  }
+}
 
 function fixture() {
   let clock = 100;
@@ -92,16 +109,17 @@ describe("process entry to business Ready", () => {
 });
 
 it("the real IPC authorization rejects subframes, pets, foreign origins and destroyed senders", () => {
-  const source = readFileSync(new URL("../../src/main/index.ts", import.meta.url), "utf8");
-  const ast = ts.createSourceFile("index.ts", source, ts.ScriptTarget.Latest, true);
-  let callback = "";
-  function visit(node: ts.Node) {
-    if (ts.isPropertyAssignment(node) && node.name.getText(ast) === "authorize") callback = node.initializer.getText(ast);
-    ts.forEachChild(node, visit);
-  }
-  visit(ast);
+  const callback = withMainSource("index.ts", (ast) => {
+    let found = "";
+    function visit(node: Node) {
+      if (ts.isPropertyAssignment(node) && node.name.getText(ast) === "authorize") found = node.initializer.getText(ast);
+      node.forEachChild(visit);
+    }
+    visit(ast);
+    return found;
+  });
   expect(callback).not.toBe("");
-  const js = ts.transpileModule(`const authorize = ${callback};`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const js = stripTypeScriptTypes(`const authorize = ${callback};`);
   const authorize = runInNewContext(`${js}\nauthorize`, {
     URL, BrowserWindow: { fromWebContents: (sender: unknown) => ({ webContents: sender }) },
     desktop: { status: () => ({ url: "od://app/" }), ownsWebContents: (id: number) => id === 1 },
@@ -119,17 +137,18 @@ it("the real IPC authorization rejects subframes, pets, foreign origins and dest
 });
 
 it("the real desktop reveal callback records a phase without declaring business Ready", () => {
-  const source = readFileSync(new URL("../../src/main/index.ts", import.meta.url), "utf8");
-  const ast = ts.createSourceFile("index.ts", source, ts.ScriptTarget.Latest, true);
-  let callback = "";
-  function visit(node: ts.Node) {
-    if (ts.isPropertyAssignment(node) && node.name.getText(ast) === "onMainWindowReady") callback = node.initializer.getText(ast);
-    ts.forEachChild(node, visit);
-  }
-  visit(ast);
+  const callback = withMainSource("index.ts", (ast) => {
+    let found = "";
+    function visit(node: Node) {
+      if (ts.isPropertyAssignment(node) && node.name.getText(ast) === "onMainWindowReady") found = node.initializer.getText(ast);
+      node.forEachChild(visit);
+    }
+    visit(ast);
+    return found;
+  });
   expect(callback).not.toBe("");
   const { timing, events } = fixture();
-  const js = ts.transpileModule(`const reveal = ${callback}; reveal();`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const js = stripTypeScriptTypes(`const reveal = ${callback}; reveal();`);
   runInNewContext(js, {
     startupTiming: timing, recordIncomingUpdateLifecycle: vi.fn(),
     recordIncomingUpdateStageResults: vi.fn(),
@@ -178,16 +197,17 @@ it('uses the main process origin even for a warm process launch and serializes a
 });
 
 it('the actual preload bridge invokes only the two startup IPC channels', async () => {
-  const source = readFileSync(new URL('../../src/main/preload.cts', import.meta.url), 'utf8');
-  const ast = ts.createSourceFile('preload.cts', source, ts.ScriptTarget.Latest, true);
-  let property = '';
-  function visit(node: ts.Node) {
-    if (ts.isPropertyAssignment(node) && node.name.getText(ast) === 'startup') property = node.getText(ast);
-    ts.forEachChild(node, visit);
-  }
-  visit(ast);
+  const property = withMainSource('preload.cts', (ast) => {
+    let found = '';
+    function visit(node: Node) {
+      if (ts.isPropertyAssignment(node) && node.name.getText(ast) === 'startup') found = node.getText(ast);
+      node.forEachChild(visit);
+    }
+    visit(ast);
+    return found;
+  });
   const invoke = vi.fn(async () => true);
-  const code = ts.transpileModule(`({ ${property} }).startup`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const code = stripTypeScriptTypes(`({ ${property} }).startup`);
   const bridge = runInNewContext(code, { ipcRenderer: { invoke } }) as {
     context(): Promise<unknown>; signal(value: unknown): Promise<unknown>;
   };
@@ -199,17 +219,14 @@ it('the actual preload bridge invokes only the two startup IPC channels', async 
 
 
 it("does not time same-process headless window restoration or its retry", async () => {
-  const source = readFileSync(new URL("../../src/main/index.ts", import.meta.url), "utf8");
-  const ast = ts.createSourceFile("index.ts", source, ts.ScriptTarget.Latest, true);
-  const declarations = ast.statements.filter(node => ts.isFunctionDeclaration(node)
-    && ["runDesktopMain", "createDesktopStartupTiming"].includes(node.name?.text ?? ""));
+  const code = withMainSource("index.ts", (ast) => ast.statements
+    .filter((node) => ts.isFunctionDeclaration(node)
+      && ["runDesktopMain", "createDesktopStartupTiming"].includes(node.name?.text ?? ""))
+    .map((node) => node.getText(ast).replace(/^export /, "")).join("\n"));
   const marker = vi.fn(() => ({ launchType: "cold", end: vi.fn() }));
   const report = vi.fn(async () => undefined);
   let calls = 0;
-  const code = declarations.map(node => node.getText(ast).replace(/^export /, "")).join("\n");
-  const run = runInNewContext(ts.transpileModule(`${code}; runDesktopMain;`, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022 },
-  }).outputText, {
+  const run = runInNewContext(stripTypeScriptTypes(`${code}; runDesktopMain;`), {
     createStartupTiming, beginLaunchMarker: marker,
     app: { getPath: () => "unused", getVersion: () => "1.0.0", once: vi.fn() }, process: { once: vi.fn() },
     runDesktopMainWithTiming: async (_runtime: unknown, _options: unknown, timing: ReturnType<typeof createStartupTiming>) => {

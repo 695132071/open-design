@@ -1,3 +1,8 @@
+import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
+import { API } from '@typescript/native/unstable/sync';
+import * as ts from '@typescript/native/unstable/ast';
+import type { Node } from '@typescript/native/unstable/ast';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startMemorySampler, type ProcessMemorySample } from '../../src/main/memory-sampler.js';
 
@@ -125,20 +130,24 @@ it('aborts in-flight delivery when quitting', async () => {
 });
 
 it('the actual before-quit and will-quit listeners stop collection before its first tick', async () => {
-  const { readFileSync } = await import('node:fs');
-  const { runInNewContext } = await import('node:vm');
-  const ts = await import('typescript');
-  const source = readFileSync(new URL('../../src/main/index.ts', import.meta.url), 'utf8');
-  const ast = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true);
+  const file = fileURLToPath(new URL('../../src/main/index.ts', import.meta.url));
   const callbacks = new Map<string, string>();
-  function visit(node: import('typescript').Node) {
-    if (ts.isCallExpression(node) && node.expression.getText(ast) === 'app.on'
-      && node.arguments[1]?.getText(ast) === '() => memorySampler.stop()') {
-      callbacks.set((node.arguments[0] as import('typescript').StringLiteral).text, node.arguments[1].getText(ast));
+  const compiler = new API();
+  try {
+    using snapshot = compiler.updateSnapshot({ openFiles: [file] });
+    const ast = snapshot.getDefaultProjectForFile(file)?.program.getSourceFile(file);
+    if (!ast) throw new Error(`Native TypeScript could not parse ${file}`);
+    function visit(node: Node): void {
+      if (ts.isCallExpression(node) && node.expression.getText(ast) === 'app.on'
+        && node.arguments[1]?.getText(ast) === '() => memorySampler.stop()') {
+        callbacks.set(node.arguments[0]!.getText(ast).replace(/^["']|["']$/g, ''), node.arguments[1]!.getText(ast));
+      }
+      node.forEachChild(visit);
     }
-    ts.forEachChild(node, visit);
+    visit(ast);
+  } finally {
+    compiler.close();
   }
-  visit(ast);
   expect([...callbacks.keys()]).toEqual(['before-quit', 'will-quit']);
   vi.useFakeTimers();
   for (const callback of callbacks.values()) {

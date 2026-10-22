@@ -217,9 +217,9 @@ const nextConfig: NextConfig = {
   },
   typescript: {
     tsconfigPath: DEV_TSCONFIG_PATH ?? (isProd ? 'tsconfig.build.json' : 'tsconfig.json'),
-    // tools-pack delegates validation to the same-commit CI/release typecheck.
-    // Ordinary `next build` still checks production sources locally.
-    ignoreBuildErrors: process.env.OD_WEB_TYPECHECK === 'external',
+    // The build script runs native TypeScript 7 after Next generates route types.
+    // Next 16's in-process checker still requires the TypeScript 6 JS API.
+    ignoreBuildErrors: true,
   },
   // Static exports keep Next.js's default `out/` output directory so static
   // hosts like Vercel can publish the generated site directly. Server runtimes
