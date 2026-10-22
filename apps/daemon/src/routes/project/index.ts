@@ -3949,6 +3949,13 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
       if (typeof id !== 'string' || !isSafeId(id)) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'invalid project id');
       }
+      const requestedConversationId = req.body?.conversationId;
+      if (
+        requestedConversationId !== undefined
+        && (typeof requestedConversationId !== 'string' || !isSafeId(requestedConversationId))
+      ) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'invalid conversation id');
+      }
       if (typeof name !== 'string' || !name.trim()) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'name required');
       }
@@ -4198,7 +4205,7 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
                   }
                 : null;
       const now = Date.now();
-      const cid = randomId();
+      const cid = requestedConversationId ?? randomId();
       const initialSessionMode = normalizeChatSessionMode(
         req.body?.conversationMode ?? req.body?.sessionMode,
       );

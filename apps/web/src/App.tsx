@@ -69,7 +69,6 @@ import {
 import type { ObservedPublicShareLink, ObservedShareUpdateRequest } from './components/share/observed-public-share-link';
 import type { ShareLoginReturn } from './components/share/share-login-return';
 import { SignedOutObservedShare } from './components/share/SignedOutObservedShare';
-import { ProjectCreationPendingView } from './components/ProjectCreationPendingView';
 import { projectsForWorkspaceChrome } from './runtime/workspace-chrome-projects';
 import { AmrArtifactUpgradeGate } from './components/AmrArtifactUpgradeGate';
 import { AmrArtifactUpgradeHomeCard } from './components/AmrArtifactUpgradeHomeCard';
@@ -241,6 +240,10 @@ import {
   ProjectCreateError,
 } from './state/projects';
 import { useModalWindowDragGuard } from './hooks/useModalWindowDragGuard';
+import {
+  holdProjectRunStatusReads,
+  releaseProjectRunStatusReads,
+} from './hooks/useProjectRunStatuses';
 import { resumeThumbnailLoads, suspendThumbnailLoads } from './lib/thumbnail-load-gate';
 import type {
   PluginShareAction,
@@ -322,20 +325,27 @@ const CREATION_HANDOFF_SETTLE_DEADLINE_MS = 8_000;
  */
 interface PendingProjectCreation {
   projectId: string;
+  /**
+   * The seed conversation's id, minted with the project id and sent with the
+   * create, so the route and the chat pane name the final conversation from
+   * the first frame (OPEND-3334).
+   */
+  conversationId: string;
   name: string;
   prompt: string;
   /**
-   * `POST /api/projects` has answered and the row is persisted. Until then
-   * the standalone pending frame is the whole surface and the real
-   * ProjectView stays unmounted (an unpersisted id must not fan out reads);
-   * from then on ProjectView mounts and keeps drawing this record's chat
-   * card until its first transcript settles (OPEND-2170).
+   * `POST /api/projects` has answered and the row is persisted. ProjectView
+   * is mounted from the click either way; until then it holds every project
+   * read (an unpersisted id must not fan out reads) and draws only this
+   * record's optimistic first turn. The record stays until the first
+   * transcript settles (OPEND-2170).
    */
   created?: boolean;
   /**
    * The files the user staged on Home, still as local `File` objects. The
-   * preparing surface draws them from these bytes, so the first project frame
-   * shows the attachments without reading a project that is not persisted yet.
+   * optimistic first turn draws them from these bytes, so the first project
+   * frame shows the attachments without reading a project that is not
+   * persisted yet.
    */
   files: readonly File[];
 }
@@ -1176,6 +1186,10 @@ function AppInner() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pendingProjectCreation, setPendingProjectCreation] =
     useState<PendingProjectCreation | null>(null);
+  // Seed conversation id per optimistic project, read by the create request.
+  // A ref, not the record: the record may already be cleared or replaced by a
+  // newer send when a slow create finally goes out.
+  const pendingProjectConversationIdsRef = useRef(new Map<string, string>());
   // Hard block from the Home pre-run balance gate. Hosted here, not in
   // EntryShell: the gate answers behind the optimistic pending frame, where
   // EntryShell is already unmounted (OPEND-2614).
@@ -1343,8 +1357,10 @@ function AppInner() {
     [],
   );
   const handleCreationHandoffSettled = useCallback((projectId: string) => {
+    // Only a persisted project's record can be released: before the create
+    // answers, the record is what holds ProjectView's project reads.
     setPendingProjectCreation((current) =>
-      current?.projectId === projectId ? null : current,
+      current?.projectId === projectId && current.created ? null : current,
     );
   }, []);
   const pendingLocalProjectIdsRef = useRef<Set<string>>(new Set());
@@ -3174,6 +3190,8 @@ function AppInner() {
   const rollbackOptimisticProjectCreation = useCallback(
     (projectId: string, stagedFiles: readonly File[], notice: string | null) => {
       clearLocalProject(projectId);
+      releaseProjectRunStatusReads(projectId);
+      pendingProjectConversationIdsRef.current.delete(projectId);
       removeWorkspaceProjectTabs(projectId);
       setProjects((current) => current.filter((project) => project.id !== projectId));
       setPendingProjectCreation((current) =>
@@ -3220,6 +3238,7 @@ function AppInner() {
         ? null
         : workspaceResourceReadContext(createWorkspaceState);
       const optimisticProjectId = randomUUID();
+      const optimisticConversationId = randomUUID();
       const now = Date.now();
       const optimisticProject: Project = {
         id: optimisticProjectId,
@@ -3238,12 +3257,14 @@ function AppInner() {
           : {}),
       };
       rememberLocalProject(optimisticProjectId);
+      holdProjectRunStatusReads(optimisticProjectId);
       // A previous rollback's snapshot must not outlive the retry that
       // carries the same files; the new attempt owns them from here.
       clearHomeComposerAttachments();
       flushSync(() => {
         setPendingProjectCreation({
           projectId: optimisticProjectId,
+          conversationId: optimisticConversationId,
           name: optimisticProject.name,
           prompt: derivedPendingPrompt ?? '',
           files: stagedFiles,
@@ -3253,9 +3274,11 @@ function AppInner() {
           ...current.filter((project) => project.id !== optimisticProjectId),
         ]);
       });
+      pendingProjectConversationIdsRef.current.set(optimisticProjectId, optimisticConversationId);
       const optimisticRoute = {
         kind: 'project',
         projectId: optimisticProjectId,
+        conversationId: optimisticConversationId,
         fileName: null,
       } as const;
       openWorkspaceTab(optimisticRoute);
@@ -3317,8 +3340,12 @@ function AppInner() {
         if (input.autoSendFirstMessage && !optimisticProjectId) {
           optimisticProjectId = beginOptimisticProjectCreation(input).projectId;
         }
+        const optimisticConversationId = optimisticProjectId
+          ? pendingProjectConversationIdsRef.current.get(optimisticProjectId)
+          : undefined;
         result = await createProject({
           ...(optimisticProjectId ? { id: optimisticProjectId } : {}),
+          ...(optimisticConversationId ? { conversationId: optimisticConversationId } : {}),
           name: input.name,
           skillId: input.skillId,
           ...(input.skillCatalogScope
@@ -3400,6 +3427,7 @@ function AppInner() {
           }
         : result.project;
       if (optimisticProjectId) {
+        releaseProjectRunStatusReads(optimisticProjectId);
         // The files now belong to this project (uploaded below); a later Home
         // visit must not revive them into the composer.
         clearHomeComposerAttachments();
@@ -5551,9 +5579,8 @@ function AppInner() {
   } else if (route.kind === 'home' && route.view === 'settings') {
     appMain = renderSettingsSurface('page');
   } else if (route.kind === 'project') {
-    // Keyed on the route, not on `activeProject`: the pending frame is built
-    // from the creation record alone so it shows on the tick the create request
-    // leaves, and survives a list refresh that has not seen the new row yet.
+    // Keyed on the route, not on `activeProject`: a newer send's record must
+    // not leak into another project's view.
     const pendingCreation =
       pendingProjectCreation?.projectId === route.projectId
         ? pendingProjectCreation
@@ -5567,26 +5594,6 @@ function AppInner() {
           ? deepLinkResolutionFailure.failure
           : undefined,
     });
-    // Same `div.app` element as the ProjectView branch below, deliberately.
-    // React reconciles one element across the pending -> real hand-off, so
-    // the `.app` entrance animation plays once for the whole transition
-    // instead of restarting when ProjectView takes over.
-    //
-    // The frame stands in for EVERY surface the route would otherwise show
-    // before ProjectView can mount (project list loading, workspace context
-    // resolving, a materialisation failure); once ProjectView mounts, the
-    // same record hands its chat card to the view (`creationHandoff`), which
-    // keeps it up until the first transcript settles (OPEND-2170).
-    const pendingFrame = pendingCreation ? (
-      <div className="app">
-        <ProjectCreationPendingView
-          projectName={activeProject?.name ?? pendingCreation.name}
-          prompt={pendingCreation.prompt}
-          files={pendingCreation.files}
-          agentId={config.agentId}
-        />
-      </div>
-    ) : null;
     const signedOutObservedShare = observedPublicShareLink
       && route.kind === 'project' && route.projectId === observedPublicShareLink.projectId
       && route.fileName === observedPublicShareLink.filePath
@@ -5619,28 +5626,36 @@ function AppInner() {
       && activeProject.workspaceId === null && activeProjectWorkspaceContext === null
       && amrLoginStatus?.loggedIn === false && amrLoginStatus.loginInFlight !== true
         ? observedPublicShareLink : null;
-    if (pendingFrame && !pendingCreation?.created) {
-      appMain = pendingFrame;
-    } else if (
-      routeSurfaceState === 'loading-projects'
-      || routeSurfaceState === 'resolving-deep-link'
-      || (
-        activeProject
-        && !projectResourceReadsCanStart(
-          activeProject.workspaceId,
-          projectRouteWorkspaceContext,
+    // A Home send's project is ProjectView from the click (OPEND-3334): the
+    // view mounts on the optimistic row, holds every project read until the
+    // create answers, and stays the same instance through the first turn.
+    // While the creation record lives, the route's own loading and failure
+    // surfaces do not replace it — the user is looking at the project they
+    // just created, and ProjectView's own authority hooks fail closed.
+    const creationOwnsSurface = pendingCreation !== null && activeProject !== null;
+    if (
+      !creationOwnsSurface
+      && (
+        routeSurfaceState === 'loading-projects'
+        || routeSurfaceState === 'resolving-deep-link'
+        || (
+          activeProject
+          && !projectResourceReadsCanStart(
+            activeProject.workspaceId,
+            projectRouteWorkspaceContext,
+          )
+          && projectRouteWorkspaceContext.loading
         )
-        && projectRouteWorkspaceContext.loading
       )
     ) {
-      appMain = pendingFrame ?? (
+      appMain = (
         <div className="entry-shell entry-shell--no-header">
           <CenteredLoader label={t('entry.loadingWorkspace')} />
         </div>
       );
-    } else if (routeSurfaceState !== 'ready') {
+    } else if (!creationOwnsSurface && routeSurfaceState !== 'ready') {
       const canRetry = routeSurfaceState === 'materialization-failed';
-      appMain = pendingFrame ?? signedOutShareFallback ?? (
+      appMain = signedOutShareFallback ?? (
         <div className="entry-shell entry-shell--no-header">
           <div className="centered-loader">
             <span role="alert">
@@ -5663,7 +5678,8 @@ function AppInner() {
         </div>
       );
     } else if (
-      activeProject
+      !creationOwnsSurface
+      && activeProject
       && !localObservedShare
       && projectRouteWorkspaceContext.failure
       && (
@@ -5671,7 +5687,7 @@ function AppInner() {
         || activeProjectWorkspaceContext === null
       )
     ) {
-      appMain = pendingFrame ?? signedOutShareFallback ?? (
+      appMain = signedOutShareFallback ?? (
         <div className="entry-shell entry-shell--no-header">
           <div className="centered-loader">
             <span role="alert">
@@ -5772,7 +5788,12 @@ function AppInner() {
           onRunActivityChange={handleProjectRunActivityChange}
           creationHandoff={
             pendingCreation
-              ? { prompt: pendingCreation.prompt, files: pendingCreation.files }
+              ? {
+                  prompt: pendingCreation.prompt,
+                  files: pendingCreation.files,
+                  conversationId: pendingCreation.conversationId,
+                  persisted: pendingCreation.created === true,
+                }
               : null
           }
           onCreationHandoffSettled={handleCreationHandoffSettled}

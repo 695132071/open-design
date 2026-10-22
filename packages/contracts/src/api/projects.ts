@@ -467,6 +467,12 @@ export interface CreateProjectRequest {
   exampleReference?: CreateProjectExampleReference;
   /** Session mode for the default conversation seeded with the project. */
   conversationMode?: ChatSessionMode;
+  /**
+   * Caller-minted id for the default conversation seeded with the project.
+   * Lets an optimistic client route to the conversation before the create
+   * answers; omitted, the daemon mints one.
+   */
+  conversationId?: string;
   customInstructions?: string;
   /** Persisted to metadata.skipDiscoveryBrief for automated project runs. */
   skipDiscoveryBrief?: boolean;
