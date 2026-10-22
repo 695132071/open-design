@@ -1026,7 +1026,6 @@ export const zhCN: Dict = {
   "homeHero.loadingContext": "正在加载上下文…",
   "homeHero.noResults": "没有找到“{query}”的结果。",
   "homeHero.searchPrompt": "搜索文件、插件、技能、MCP 服务器和连接器。",
-  "homeHero.parameters": "{n} 个参数",
   "homeHero.details": "详情",
   "homeHero.toRun": "运行",
   "homeHero.forNewLine": "换行",

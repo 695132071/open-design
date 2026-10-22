@@ -1023,7 +1023,6 @@ export const th: Dict = {
   'homeHero.loadingContext': 'กำลังโหลดบริบท…',
   'homeHero.noResults': 'ไม่มีผลลัพธ์สำหรับ "{query}"',
   'homeHero.searchPrompt': 'ค้นหาไฟล์ ปลั๊กอิน skills, MCP server และคอนเนกเตอร์',
-  'homeHero.parameters': '{n} พารามิเตอร์',
   'homeHero.details': 'รายละเอียด',
   'homeHero.toRun': 'เพื่อเรียกใช้',
   'homeHero.forNewLine': 'เพื่อขึ้นบรรทัดใหม่',

@@ -1034,7 +1034,6 @@ export const ar: Dict = {
   'homeHero.loadingContext': 'جارٍ تحميل السياق…',
   'homeHero.noResults': 'لا توجد نتائج لـ "{query}".',
   'homeHero.searchPrompt': 'ابحث في الملفات والإضافات والمهارات وخوادم MCP والموصّلات.',
-  'homeHero.parameters': '{n} معامل',
   'homeHero.details': 'التفاصيل',
   'homeHero.toRun': 'للتشغيل',
   'homeHero.forNewLine': 'لسطر جديد',

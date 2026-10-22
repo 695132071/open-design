@@ -1023,7 +1023,6 @@ export const uk: Dict = {
   'homeHero.loadingContext': 'Завантаження контексту…',
   'homeHero.noResults': 'Немає результатів для «{query}».',
   'homeHero.searchPrompt': 'Пошук файлів, плагінів, навичок, серверів MCP і конекторів.',
-  'homeHero.parameters': 'Параметрів: {n}',
   'homeHero.details': 'Деталі',
   'homeHero.toRun': 'щоб запустити',
   'homeHero.forNewLine': 'для нового рядка',

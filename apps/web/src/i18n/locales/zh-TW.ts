@@ -1028,7 +1028,6 @@ export const zhTW: Dict = {
   "homeHero.loadingContext": "正在載入上下文…",
   "homeHero.noResults": "找不到「{query}」的結果。",
   "homeHero.searchPrompt": "搜尋檔案、外掛、技能、MCP 伺服器與連接器。",
-  "homeHero.parameters": "{n} 個參數",
   "homeHero.details": "詳細資料",
   "homeHero.toRun": "執行",
   "homeHero.forNewLine": "換行",

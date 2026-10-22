@@ -1023,7 +1023,6 @@ export const ko: Dict = {
   'homeHero.loadingContext': '컨텍스트를 불러오는 중…',
   'homeHero.noResults': '"{query}"에 대한 결과가 없습니다.',
   'homeHero.searchPrompt': '파일, 플러그인, 스킬, MCP 서버 및 커넥터 검색.',
-  'homeHero.parameters': '매개변수 {n}개',
   'homeHero.details': '세부 정보',
   'homeHero.toRun': '실행',
   'homeHero.forNewLine': '줄 바꿈',

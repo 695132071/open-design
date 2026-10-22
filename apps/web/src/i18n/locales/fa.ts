@@ -1034,7 +1034,6 @@ export const fa: Dict = {
   'homeHero.loadingContext': 'در حال بارگذاری زمینه…',
   'homeHero.noResults': 'نتیجه‌ای برای «{query}» یافت نشد.',
   'homeHero.searchPrompt': 'جستجوی فایل‌ها، افزونه‌ها، مهارت‌ها، سرورهای MCP و کانکتورها.',
-  'homeHero.parameters': '{n} پارامتر',
   'homeHero.details': 'جزئیات',
   'homeHero.toRun': 'برای اجرا',
   'homeHero.forNewLine': 'برای خط جدید',

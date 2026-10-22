@@ -1390,7 +1390,6 @@ export interface Dict {
   'homeHero.loadingContext': string;
   'homeHero.noResults': string;
   'homeHero.searchPrompt': string;
-  'homeHero.parameters': string;
   'homeHero.details': string;
   'homeHero.toRun': string;
   'homeHero.forNewLine': string;

@@ -1034,7 +1034,6 @@ export const en: Dict = {
   'homeHero.loadingContext': 'Loading context…',
   'homeHero.noResults': 'No results for "{query}".',
   'homeHero.searchPrompt': 'Search files, plugins, skills, MCP servers, and connectors.',
-  'homeHero.parameters': '{n} parameters',
   'homeHero.details': 'Details',
   'homeHero.toRun': 'to run',
   'homeHero.forNewLine': 'for new line',

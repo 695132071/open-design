@@ -1023,7 +1023,6 @@ export const ja: Dict = {
   'homeHero.loadingContext': 'コンテキストを読み込み中…',
   'homeHero.noResults': '「{query}」に該当する結果はありません。',
   'homeHero.searchPrompt': 'ファイル、プラグイン、スキル、MCP サーバー、コネクターを検索。',
-  'homeHero.parameters': '{n} 個のパラメーター',
   'homeHero.details': '詳細',
   'homeHero.toRun': 'で実行',
   'homeHero.forNewLine': 'で改行',

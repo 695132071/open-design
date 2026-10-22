@@ -1023,7 +1023,6 @@ export const id: Dict = {
   'homeHero.loadingContext': 'Memuat konteks…',
   'homeHero.noResults': 'Tidak ada hasil untuk "{query}".',
   'homeHero.searchPrompt': 'Cari file, plugin, skill, server MCP, dan konektor.',
-  'homeHero.parameters': '{n} parameter',
   'homeHero.details': 'Detail',
   'homeHero.toRun': 'untuk menjalankan',
   'homeHero.forNewLine': 'untuk baris baru',

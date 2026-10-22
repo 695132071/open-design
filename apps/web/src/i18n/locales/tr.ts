@@ -1023,7 +1023,6 @@ export const tr: Dict = {
   'homeHero.loadingContext': 'Bağlam yükleniyor…',
   'homeHero.noResults': '"{query}" için sonuç bulunamadı.',
   'homeHero.searchPrompt': 'Dosyalarda, plugin\'lerde, skill\'lerde, MCP sunucularında ve bağlayıcılarda arama yapın.',
-  'homeHero.parameters': '{n} parametre',
   'homeHero.details': 'Ayrıntılar',
   'homeHero.toRun': 'çalıştırmak için',
   'homeHero.forNewLine': 'yeni satır için',

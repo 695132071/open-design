@@ -1023,7 +1023,6 @@ export const fr: Dict = {
   'homeHero.loadingContext': 'Chargement du contexte…',
   'homeHero.noResults': 'Aucun résultat pour « {query} ».',
   'homeHero.searchPrompt': 'Rechercher des fichiers, plugins, Skills, serveurs MCP et connecteurs.',
-  'homeHero.parameters': '{n} paramètres',
   'homeHero.details': 'Détails',
   'homeHero.toRun': 'pour lancer',
   'homeHero.forNewLine': 'pour passer à la ligne',

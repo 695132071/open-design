@@ -1023,7 +1023,6 @@ export const hu: Dict = {
   'homeHero.loadingContext': 'Kontextus betöltése…',
   'homeHero.noResults': 'Nincs találat erre: "{query}".',
   'homeHero.searchPrompt': 'Fájlok, pluginok, skillek, MCP-szerverek és összekötők keresése.',
-  'homeHero.parameters': '{n} paraméter',
   'homeHero.details': 'Részletek',
   'homeHero.toRun': 'a futtatáshoz',
   'homeHero.forNewLine': 'új sorhoz',

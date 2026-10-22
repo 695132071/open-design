@@ -1023,7 +1023,6 @@ export const ru: Dict = {
   'homeHero.loadingContext': 'Загрузка контекста…',
   'homeHero.noResults': 'Нет результатов по запросу «{query}».',
   'homeHero.searchPrompt': 'Поиск файлов, плагинов, навыков, серверов MCP и коннекторов.',
-  'homeHero.parameters': 'Параметров: {n}',
   'homeHero.details': 'Подробнее',
   'homeHero.toRun': 'для запуска',
   'homeHero.forNewLine': 'для новой строки',

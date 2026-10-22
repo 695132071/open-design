@@ -1023,7 +1023,6 @@ export const ptBR: Dict = {
   'homeHero.loadingContext': 'Carregando contexto…',
   'homeHero.noResults': 'Nenhum resultado para "{query}".',
   'homeHero.searchPrompt': 'Busque arquivos, plugins, skills, servidores MCP e conectores.',
-  'homeHero.parameters': '{n} parâmetros',
   'homeHero.details': 'Detalhes',
   'homeHero.toRun': 'para executar',
   'homeHero.forNewLine': 'para nova linha',
