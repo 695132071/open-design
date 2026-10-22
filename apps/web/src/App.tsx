@@ -168,6 +168,8 @@ import {
   stashHomePromptHandoff,
 } from './components/home-hero/plugin-authoring';
 import { goBack, navigate, useRoute, type Route } from './router';
+import { navigationTiming, navigationPage, usePageNavigationReady, observeNavigation } from './observability/navigation-timing';
+import { useStartupReady } from './observability/startup-ready';
 import {
   fetchDaemonConfig,
   DEFAULT_CONFIG,
@@ -1145,9 +1147,11 @@ function AppInner() {
   const [workspaceSkills, setWorkspaceSkills] = useState<{
     identity: string;
     items: SkillSummary[];
+    ready: boolean;
   }>(() => ({
     identity: currentWorkspaceCatalogIdentity,
     items: [],
+    ready: false,
   }));
   // A workspace-scoped response is safe to render only under the exact
   // identity it was fetched for. The replacement read starts in an effect, so
@@ -1165,9 +1169,11 @@ function AppInner() {
   const [workspaceDesignSystems, setWorkspaceDesignSystems] = useState<{
     identity: string;
     items: DesignSystemSummary[];
+    ready: boolean;
   }>(() => ({
     identity: currentWorkspaceCatalogIdentity,
     items: [],
+    ready: false,
   }));
   // Like skills and projects, a design-system catalog belongs to one exact
   // Workspace membership. Effects refresh after React commits, so merely
@@ -1196,6 +1202,7 @@ function AppInner() {
   const [homeAmrBalanceGateBlock, setHomeAmrBalanceGateBlock] =
     useState<HomeAmrBalanceGateBlock | null>(null);
   const [appliedProjectListWitness, setAppliedProjectListWitness] = useState<{
+    displayKey: string;
     scopeKey: string;
     generation: number;
     workspaceView: WorkspaceProjectListView | undefined;
@@ -1410,6 +1417,7 @@ function AppInner() {
   // which probes CLI versions and can take seconds on cold start). The entry
   // view picks the right flag for whichever tab the user is currently on.
   const [agentsLoading, setAgentsLoading] = useState(true);
+  const [agentsReady, setAgentsReady] = useState(false);
   const [skillsLoading, setSkillsLoading] = useState(true);
   // Functional skills and design templates are two independent registry reads
   // that gate ONE loader: the EntryView must not stop spinning until both have
@@ -1431,6 +1439,8 @@ function AppInner() {
     generation: number;
   } | null>(null);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(true);
+  const [designTemplatesReady, setDesignTemplatesReady] = useState(false);
+  const [promptTemplatesReady, setPromptTemplatesReady] = useState(false);
   // Goes true once the daemon-persisted config (agentId/designSystemId/etc.)
   // has merged into local state. Auto-selection effects below wait on this
   // so they don't race ahead of the daemon-stored choice and overwrite it
@@ -1450,6 +1460,14 @@ function AppInner() {
   // can't overwrite the saved state with `''` before hydration lands.
   const [composioConfigLoading, setComposioConfigLoading] = useState(true);
   const route = useRoute();
+  useLayoutEffect(() => {
+    navigationTiming.observeRoute(route);
+  }, [route]);
+  useEffect(() => {
+    const onPageExit = () => navigationTiming.cancel('page_exit');
+    window.addEventListener('pagehide', onPageExit);
+    return () => window.removeEventListener('pagehide', onPageExit);
+  }, []);
   const routeRef = useRef(route);
   routeRef.current = route;
   const settingsReturnTargetRef = useRef<SettingsReturnTarget | null>(null);
@@ -1477,6 +1495,37 @@ function AppInner() {
     accountGeneration: projectDisplayAccountGeneration,
     context: workspaceContext,
     view: effectiveWorkspaceProjectView,
+  });
+  useStartupReady({
+    visible: route.kind === 'home' && daemonAppConfigReady,
+    interactive: route.kind === 'home' && daemonAppConfigReady && !workspaceContextLoading
+      && !workspaceContextState.identityChangePending && !projectsLoading
+      && appliedProjectListWitness?.displayKey === currentProjectDisplayKey
+      && projectListFailure?.displayKey !== currentProjectDisplayKey
+      && agentsReady && !agentsLoading && !skillsLoading && !dsLoading && !promptTemplatesLoading
+      && designTemplatesReady && promptTemplatesReady
+      && workspaceSkills.ready && workspaceDesignSystems.ready
+      && workspaceSkills.identity === currentWorkspaceCatalogIdentity
+      && workspaceDesignSystems.identity === currentWorkspaceCatalogIdentity,
+  });
+  // Page timing shares the authoritative Home gates, including scoped data.
+  // Independent data-driven destinations report Ready in their own component.
+  const pageWithSharedData = route.kind === 'home' && ['home', 'onboarding', 'projects', 'drafts', 'all-projects', 'design-systems', 'brands', 'settings'].includes(route.view);
+  usePageNavigationReady({
+    page: navigationPage(route),
+    visible: pageWithSharedData && daemonAppConfigReady,
+    ready: pageWithSharedData && daemonAppConfigReady && !workspaceContextLoading
+      && !workspaceContextState.identityChangePending && !projectsLoading
+      && appliedProjectListWitness?.displayKey === currentProjectDisplayKey
+      && projectListFailure?.displayKey !== currentProjectDisplayKey
+      && agentsReady && !agentsLoading && !skillsLoading && !dsLoading && !promptTemplatesLoading
+      && designTemplatesReady && promptTemplatesReady
+      && workspaceSkills.ready && workspaceDesignSystems.ready
+      && workspaceSkills.identity === currentWorkspaceCatalogIdentity
+      && workspaceDesignSystems.identity === currentWorkspaceCatalogIdentity
+      && (route.kind !== 'home' || route.view !== 'settings' || !composioConfigLoading),
+    failure: pageWithSharedData && projectListFailure?.displayKey === currentProjectDisplayKey,
+    scopeKey: currentProjectDisplayKey,
   });
   // Display snapshots are deliberately separate from authorization. They may
   // prevent a warm view from flashing a loader, but every network read and
@@ -1529,6 +1578,7 @@ function AppInner() {
   // proxy starved (see apps/packaged/src/index.ts ignore-connections-limit
   // note for the other half of that fix).
   const beginAgentStreamRequest = useCallback(() => {
+    setAgentsReady(false);
     agentStreamAbortRef.current?.abort();
     agentStreamAbortRef.current = new AbortController();
     agentStreamRequestSeqRef.current += 1;
@@ -1715,6 +1765,7 @@ function AppInner() {
         ? null
         : failure);
     setAppliedProjectListWitness({
+      displayKey: request.displayKey,
       scopeKey: request.scopeKey,
       generation: request.generation,
       workspaceView: request.workspaceView,
@@ -1760,8 +1811,8 @@ function AppInner() {
   // every subsequent capture() a no-op. When the user opts back in we
   // call opt_in_capturing to resume.
   useEffect(() => {
-    analytics.setConsent(config.telemetry?.metrics === true);
-  }, [analytics.setConsent, config.telemetry?.metrics]);
+    analytics.setConsent(daemonAppConfigReady && config.telemetry?.metrics === true);
+  }, [analytics.setConsent, daemonAppConfigReady, config.telemetry?.metrics]);
 
   // Sync PostHog's distinct_id with the anonymous installationId, both on
   // first opt-in (when the daemon stamps a fresh id) and on Delete-my-data
@@ -2274,6 +2325,7 @@ function AppInner() {
       })
         .then((list) => {
           if (cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
+          setAgentsReady(true);
           reportAgentDetectDiagnostics(analytics.track, list);
           setAgents(
             mergeAmrModelsIntoAgents(
@@ -2309,8 +2361,10 @@ function AppInner() {
       // the `functional` half of this gate. Reading it here as well would
       // spend a second `/api/skills` request per launch, and the first one
       // would be the headerless (fail-closed) answer.
-      void fetchDesignTemplates().then((list) => {
+      let templatesReady = true;
+      void fetchDesignTemplates({ onReadResult: ready => { templatesReady = ready; } }).then((list) => {
         if (cancelled) return;
+        setDesignTemplatesReady(templatesReady);
         setDesignTemplates(list);
         markSkillRegistryReady('templates');
       });
@@ -2333,22 +2387,24 @@ function AppInner() {
           designSystemsCatalogIdentity,
           designSystemsRequestGeneration,
         );
-        void fetchDesignSystems(designSystemsContext).then((list) => {
-          if (
-            cancelled ||
-            workspaceContextStateRef.current.identityChangePending ||
-            designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity)
-              !== designSystemsRequestGeneration ||
-            currentWorkspaceAccountGeneration() !== designSystemsAccountGeneration ||
-            workspaceIdentityCacheKey(workspaceContextRef.current)
-              !== designSystemsWorkspaceIdentity
-          ) return;
-          setWorkspaceDesignSystems({
-            identity: designSystemsCatalogIdentity,
-            items: list,
+        let ready = true;
+        void fetchDesignSystems(designSystemsContext, { onReadResult: success => { ready = success; } }).then((list) => {
+            if (
+              cancelled ||
+              workspaceContextStateRef.current.identityChangePending ||
+              designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity)
+                !== designSystemsRequestGeneration ||
+              currentWorkspaceAccountGeneration() !== designSystemsAccountGeneration ||
+              workspaceIdentityCacheKey(workspaceContextRef.current)
+                !== designSystemsWorkspaceIdentity
+            ) return;
+            setWorkspaceDesignSystems({
+              identity: designSystemsCatalogIdentity,
+              items: list,
+              ready,
+            });
+            setDsLoading(false);
           });
-          setDsLoading(false);
-        });
       }
 
       const request = beginProjectListRequest(workspaceProjectViewRef.current);
@@ -2368,8 +2424,10 @@ function AppInner() {
         setTemplates(list);
       });
 
-      void fetchPromptTemplates().then((list) => {
+      let promptsReady = true;
+      void fetchPromptTemplates({ onReadResult: ready => { promptsReady = ready; } }).then((list) => {
         if (cancelled) return;
+        setPromptTemplatesReady(promptsReady);
         setPromptTemplates(list);
         setPromptTemplatesLoading(false);
       });
@@ -2709,7 +2767,8 @@ function AppInner() {
     const requestGeneration =
       (designSystemsRequestGenerationRef.current.get(issuedCatalogIdentity) ?? 0) + 1;
     designSystemsRequestGenerationRef.current.set(issuedCatalogIdentity, requestGeneration);
-    const list = await fetchDesignSystems(issuedContext, options);
+    let ready = true;
+    const list = await fetchDesignSystems(issuedContext, { ...options, onReadResult: success => { ready = success; } });
     if (
       workspaceContextStateRef.current.identityChangePending
       || designSystemsRequestGenerationRef.current.get(issuedCatalogIdentity)
@@ -2717,7 +2776,7 @@ function AppInner() {
       || currentWorkspaceAccountGeneration() !== issuedAccountGeneration
       || workspaceIdentityCacheKey(workspaceContextRef.current) !== issuedIdentity
     ) return;
-    setWorkspaceDesignSystems({ identity: issuedCatalogIdentity, items: list });
+    setWorkspaceDesignSystems({ identity: issuedCatalogIdentity, items: list, ready });
     // Bootstrap and this workspace-scoped refresh can overlap on launch.
     // Either response is a complete catalog for the active daemon identity,
     // so do not leave a successful refresh hidden behind bootstrap's loader
@@ -2756,7 +2815,8 @@ function AppInner() {
     const requestGeneration =
       (skillsRequestGenerationRef.current.get(issuedCatalogIdentity) ?? 0) + 1;
     skillsRequestGenerationRef.current.set(issuedCatalogIdentity, requestGeneration);
-    const list = await fetchSkills(read.context);
+    let ready = true;
+    const list = await fetchSkills(read.context, { onReadResult: success => { ready = success; } });
     // A read for the workspace the user has since LEFT must not restore that
     // workspace's catalog over the current one — see `beginWorkspaceScopedRead`.
     // Skipping the gate too is deliberate: this response is not an answer about
@@ -2770,6 +2830,7 @@ function AppInner() {
     setWorkspaceSkills({
       identity: issuedCatalogIdentity,
       items: list,
+      ready,
     });
     markSkillRegistryReady('functional');
   }, [markSkillRegistryReady]);
@@ -3114,6 +3175,7 @@ function AppInner() {
         const ordered = orderAgentsByRegistry(next);
         reportAgentDetectDiagnostics(analytics.track, ordered);
         if (isCurrentAgentStreamRequest(agentRequestId)) {
+          setAgentsReady(true);
           setAgents(mergeAmrModelsIntoAgents(ordered, amrModelsRef.current));
           setAgentsLoading(false);
         }
@@ -4020,7 +4082,7 @@ function AppInner() {
     return { kind: 'resolved', name: authoritativeName };
   }, [rememberAuthoritativeProjectName]);
 
-  const handleOpenProject = useCallback(async (
+  const openProjectForNavigation = useCallback(async (
     id: string,
     fileName?: string,
     projectTitleHint?: ProjectTitleHint,
@@ -4249,6 +4311,37 @@ function AppInner() {
     rememberAuthoritativeProjectName,
     t,
   ]);
+
+  const handleOpenProject = useCallback(async (
+    id: string,
+    fileName?: string,
+    projectTitleHint?: ProjectTitleHint,
+  ): Promise<boolean> => {
+    const source = routeRef.current;
+    // Clicking an already-open project/file is not another project entry.
+    if (source.kind === 'project' && source.projectId === id) {
+      observeNavigation(() => navigationTiming.cancel('superseded'));
+      return openProjectForNavigation(id, fileName, projectTitleHint);
+    }
+    const openingAccountGeneration = currentWorkspaceAccountGeneration();
+    const openingAuthorizationGeneration = projectAuthorizationGenerationRef.current;
+    const navigationId = observeNavigation(() => navigationTiming.begin(source, { projectId: id }));
+    try {
+      const opened = await openProjectForNavigation(id, fileName, projectTitleHint);
+      if (!opened) {
+        if (currentWorkspaceAccountGeneration() !== openingAccountGeneration
+          || projectAuthorizationGenerationRef.current !== openingAuthorizationGeneration) {
+          if (navigationId) observeNavigation(() => navigationTiming.finish(navigationId, 'cancelled', 'scope_changed'));
+        } else {
+          if (navigationId) observeNavigation(() => navigationTiming.finish(navigationId, 'failed', 'open_unavailable'));
+        }
+      }
+      return opened;
+    } catch (error) {
+      if (navigationId) observeNavigation(() => navigationTiming.finish(navigationId, 'failed', 'open_unavailable'));
+      throw error;
+    }
+  }, [openProjectForNavigation]);
 
   useEffect(() => {
     if (!config.pet?.enabled || !daemonLive) {
@@ -4592,7 +4685,7 @@ function AppInner() {
   const handleSkillsChanged = useCallback(
     (affectedSkillId?: string) => {
       void refreshSkills();
-      void fetchDesignTemplates().then((list) => setDesignTemplates(list));
+      void fetchDesignTemplates({ onReadResult: setDesignTemplatesReady }).then((list) => setDesignTemplates(list));
       iframeKeepAlivePool.evictMatching(
         (entry) => {
           const proj = projectsRef.current.find((p) => p.id === entry.projectId);
@@ -4774,6 +4867,18 @@ function AppInner() {
     ? projectRouteWorkspaceContext.context
     : null;
   projectRouteWorkspaceContextRef.current = activeProjectWorkspaceContext;
+  useEffect(() => {
+    if (route.kind !== 'project') return;
+    const attempt = navigationTiming.getSnapshot();
+    if (!attempt || attempt.projectId !== route.projectId) return;
+    // These failures render an App-owned error surface, so ProjectView's
+    // business Ready hook will never mount to terminate the attempt.
+    if (projectRouteWorkspaceContext.failure) {
+      navigationTiming.finish(attempt.id, 'failed', 'scope_unavailable');
+    } else if (deepLinkResolutionFailure?.projectId === route.projectId) {
+      navigationTiming.finish(attempt.id, 'failed', 'project_unavailable');
+    }
+  }, [route, projectRouteWorkspaceContext.failure, deepLinkResolutionFailure]);
   // The post-generation upgrade gate belongs to the project that owns the
   // conversation, not whichever Workspace the navigation shell currently
   // selects. A bound project stays fail-closed until its exact membership and

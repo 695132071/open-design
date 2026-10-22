@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
+import { installMockOpenDesignHost } from '@open-design/host/testing';
 
 import { navigate } from '../../src/router';
 import {
@@ -12,6 +13,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../src/App';
+import { navigationTiming } from '../../src/observability/navigation-timing';
+import { reportSafetyEvent } from '../../src/analytics/error-tracking';
 import { notifyAmrLoginStatusChanged } from '../../src/components/amrLoginPolling';
 import type { ShareLoginReturn } from '../../src/components/share/share-login-return';
 import type {
@@ -127,6 +130,11 @@ vi.mock('../../src/components/IframeKeepAlivePool', async (importOriginal) => ({
     subscribe: vi.fn(() => () => {}),
     revision: vi.fn(() => 0),
   }),
+}));
+
+vi.mock('../../src/analytics/error-tracking', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../src/analytics/error-tracking')>(),
+  reportSafetyEvent: vi.fn(),
 }));
 
 vi.mock('../../src/components/EntryView', () => ({
@@ -863,6 +871,7 @@ function stubWorkspaceContext(
 
 describe('App project creation routing', () => {
   beforeEach(() => {
+    navigationTiming.cancel('page_exit');
     resetCoalescedGet();
     resetWorkspaceContextCache();
     resetTeamProjectsCache();
@@ -940,6 +949,7 @@ describe('App project creation routing', () => {
 
   afterEach(() => {
     cleanup();
+    navigationTiming.cancel('page_exit');
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
@@ -949,6 +959,54 @@ describe('App project creation routing', () => {
     resetCoalescedGet();
     workspaceInvalidationHarness.handlers.length = 0;
     workspaceInvalidationHarness.onActive.length = 0;
+  });
+
+  it('declares Home business Ready after successful empty required catalogs', async () => {
+    mockedListProjects.mockResolvedValue([]);
+    const signal = vi.fn(async (_value: { readiness_point?: string }) => true);
+    const restore = installMockOpenDesignHost({ host: {
+      startup: { context: async () => ({ launch_attempt_id: 'launch', app_session_id: 'session' }), signal },
+    } });
+    try {
+      render(<App />);
+      await waitFor(() => expect(signal).toHaveBeenCalledWith(expect.objectContaining({ readiness_point: 'interactive_ready' })));
+    } finally { restore(); }
+  });
+
+  it.each(['projects', 'agents', 'config', 'skills', 'designTemplates', 'designSystems', 'promptTemplates'] as const)('does not declare Home business Ready when required %s fail', async (resource) => {
+    mockedListProjects.mockResolvedValue([]);
+    if (resource === 'projects') mockedListProjects.mockRejectedValue(new Error('catalog unavailable'));
+    else if (resource === 'agents') mockedFetchAgentsStream.mockRejectedValue(new Error('agents unavailable'));
+    else if (resource === 'config') mockedFetchDaemonConfig.mockResolvedValue(null);
+    else {
+      // Exercise the actual provider's failure semantics with the App readiness
+      // gates; a mocked rejected promise misses providers that swallow failures.
+      const actual = await vi.importActual<typeof import('../../src/providers/registry')>('../../src/providers/registry');
+      if (resource === 'skills') mockedFetchSkills.mockImplementation(actual.fetchSkills);
+      if (resource === 'designTemplates') mockedFetchDesignTemplates.mockImplementation(actual.fetchDesignTemplates);
+      if (resource === 'designSystems') mockedFetchDesignSystems.mockImplementation(actual.fetchDesignSystems);
+      if (resource === 'promptTemplates') mockedFetchPromptTemplates.mockImplementation(actual.fetchPromptTemplates);
+      const endpoint = { skills: '/api/skills', designTemplates: '/api/design-templates', designSystems: '/api/design-systems', promptTemplates: '/api/prompt-templates' }[resource];
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (
+        new URL(String(input), 'http://d.local').pathname === endpoint
+          ? new Response('', { status: 503 }) : Response.json({})
+      )));
+    }
+    const signal = vi.fn(async (_value: { readiness_point?: string }) => true);
+    const restore = installMockOpenDesignHost({ host: {
+      startup: { context: async () => ({ launch_attempt_id: 'launch', app_session_id: 'session' }), signal },
+    } });
+    try {
+      render(<App />);
+      if (resource !== 'config') {
+        await waitFor(() => expect(signal).toHaveBeenCalledWith(expect.objectContaining({ readiness_point: 'first_visible' })));
+      } else {
+        await waitFor(() => expect(mockedFetchDaemonConfig).toHaveBeenCalled());
+      }
+      await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+      await act(async () => { await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); });
+      expect(signal.mock.calls.some(([value]) => value.readiness_point === 'interactive_ready')).toBe(false);
+    } finally { restore(); }
   });
 
   it('routes mutations and limits global focus catch-up to Skills and Design Systems', async () => {
@@ -993,7 +1051,7 @@ describe('App project creation routing', () => {
         workspaceId: context.workspaceId,
         workspaceMemberId: context.workspaceMemberId,
       }),
-      { forceTeamMaterialization: true },
+      { forceTeamMaterialization: true, onReadResult: expect.any(Function) },
     );
     expect(mockedFetchSkills).toHaveBeenCalledTimes(1);
 
@@ -2411,6 +2469,75 @@ describe('App project creation routing', () => {
     expect(mockedUploadProjectFiles).not.toHaveBeenCalled();
   });
 
+  it('reports a route authority failure even when ProjectView cannot mount', async () => {
+    const projectId = 'project-inaccessible';
+    mockedListProjects.mockResolvedValue([{ ...freshProject, id: projectId, workspaceId: 'ws-inaccessible' }]);
+    window.history.replaceState({}, '', `/projects/${projectId}`);
+    navigationTiming.begin({ kind: 'home' }, { projectId });
+    render(<App />);
+    await waitFor(() => {
+      const failed = vi.mocked(reportSafetyEvent).mock.calls.find(([name, props]) =>
+        name === 'client_navigation_result' && props?.status === 'failed');
+      expect(failed?.[1]?.reason).toBe('scope_unavailable');
+    });
+    expect(screen.queryByTestId('project-view')).toBeNull();
+  });
+
+  it('records leaving during project lookup without cancelling the original open operation', async () => {
+    const lookup = deferred<Awaited<ReturnType<typeof getProject>>>();
+    mockedListProjects.mockResolvedValue([]);
+    mockedGetProject.mockReturnValue(lookup.promise);
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open missing project' }));
+    await waitFor(() => expect(mockedGetProject).toHaveBeenCalled());
+    const attempt = navigationTiming.getSnapshot();
+    expect(attempt?.projectId).toBe('project-missing');
+    expect(vi.mocked(reportSafetyEvent).mock.calls.some(([name, props]) =>
+      name === 'client_navigation_result' && props?.status === 'started')).toBe(true);
+    act(() => navigate({ kind: 'home', view: 'settings' }));
+    await waitFor(() => expect(navigationTiming.getSnapshot()).toBeNull());
+    await act(async () => { lookup.resolve(freshProject); });
+    expect(window.location.pathname).toBe('/projects/project-missing');
+    const events = vi.mocked(reportSafetyEvent).mock.calls
+      .filter(([name]) => name === 'client_navigation_result').map(([, props]) => props);
+    // The settings route is measured as its own page switch; assert only the project attempt.
+    const projectEvents = events.filter((event) => event?.navigation_id === events[0]?.navigation_id);
+    expect(projectEvents.map((event) => event?.status)).toEqual(['started', 'cancelled']);
+  });
+
+  it('still opens the project when only its telemetry attempt is cancelled', async () => {
+    const lookup = deferred<Awaited<ReturnType<typeof getProject>>>();
+    mockedListProjects.mockResolvedValue([]);
+    mockedGetProject.mockReturnValue(lookup.promise);
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open missing project' }));
+    await waitFor(() => expect(mockedGetProject).toHaveBeenCalled());
+    act(() => navigationTiming.cancel('superseded'));
+    await act(async () => { lookup.resolve({ ...freshProject, id: 'project-missing' }); });
+    await waitFor(() => expect(window.location.pathname).toBe('/projects/project-missing'));
+  });
+
+  it('gives repeated project clicks new ids without suppressing an earlier lookup', async () => {
+    const firstLookup = deferred<Awaited<ReturnType<typeof getProject>>>();
+    mockedListProjects.mockResolvedValue([]);
+    mockedGetProject.mockReturnValueOnce(firstLookup.promise).mockResolvedValueOnce(null);
+    render(<App />);
+    const open = await screen.findByRole('button', { name: 'Open missing project' });
+    fireEvent.click(open);
+    await waitFor(() => expect(mockedGetProject).toHaveBeenCalledTimes(1));
+    const firstId = navigationTiming.getSnapshot()?.id;
+    fireEvent.click(open);
+    await waitFor(() => expect(mockedGetProject).toHaveBeenCalledTimes(2));
+    await screen.findByRole('alert');
+    await act(async () => { firstLookup.resolve({ ...freshProject, id: 'project-missing' }); });
+    expect(window.location.pathname).toBe('/projects/project-missing');
+    const events = vi.mocked(reportSafetyEvent).mock.calls
+      .filter(([name]) => name === 'client_navigation_result').map(([, props]) => props);
+    expect(events.map((event) => event?.status)).toEqual(['started', 'cancelled', 'started', 'failed']);
+    expect(events[1]?.navigation_id).toBe(firstId);
+    expect(events[2]?.navigation_id).not.toBe(firstId);
+  });
+
   it('surfaces a toast instead of silently bouncing when opening a missing project', async () => {
     mockedListProjects.mockResolvedValue([]);
     mockedGetProject.mockResolvedValue(null);
@@ -2426,6 +2553,10 @@ describe('App project creation routing', () => {
     });
     expect(window.location.pathname).toBe('/');
     expect(screen.queryByTestId('project-view')).toBeNull();
+    const events = vi.mocked(reportSafetyEvent).mock.calls
+      .filter(([name]) => name === 'client_navigation_result').map(([, props]) => props);
+    expect(events.map((event) => event?.status)).toEqual(['started', 'failed']);
+    expect(events[1]?.reason).toBe('open_unavailable');
   });
 
   it('OPEND-3691 keeps the exact panel continuation above the project authorization remount', async () => {

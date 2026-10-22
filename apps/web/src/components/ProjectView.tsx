@@ -1,3 +1,5 @@
+import { useStartupReady } from '../observability/startup-ready';
+import { navigationTiming, useProjectNavigationReady, observeNavigation } from '../observability/navigation-timing';
 import { withLiveArtifactDeliveries } from '../runtime/live-artifact-delivery';
 import { readRetriedErrorSurface, retriedErrorSurfaceKey, writeRetriedErrorSurface } from '../runtime/chat/retried-error-surface';
 import type { ObservedPublicShareLink, ObservedShareUpdateRequest } from './share/observed-public-share-link';
@@ -3816,6 +3818,32 @@ export function ProjectView({
         })
     : [];
   const newConversationDisabled = creatingConversation || projectMutationReadOnly;
+  // CS03: actionable business Ready, independent of the chat first-paint
+  // metric. Never accept a stale transcript or a merely mounted placeholder.
+  const projectInteractiveReady = Boolean(
+      detailedProject
+      && !projectDetail.loading
+      && !projectWorkspaceScopeState.loading
+      && !projectWorkspaceScopeState.failure
+      && activeConversationId
+      && messagesConversationId === activeConversationId
+      && messagesInitialized
+      && messagesAuthorityKeyRef.current === projectRunAuthorityKey
+      && !currentConversationSendDisabled
+      && !newConversationDisabled
+    );
+  useStartupReady({ visible: Boolean(detailedProject && !projectDetail.loading), interactive: projectInteractiveReady });
+  useProjectNavigationReady({
+    projectId: project.id,
+    conversationId: activeConversationId,
+    visible: Boolean(detailedProject && !projectDetail.loading),
+    ready: projectInteractiveReady,
+    failure: projectWorkspaceScopeState.failure ? 'scope_unavailable'
+      : projectDetail.error ? 'project_unavailable'
+      : conversationLoadFailure ? 'conversations_unavailable'
+      : activeConversationId && failedMessagesConversationId === activeConversationId
+        ? 'messages_unavailable' : null,
+  });
   const activeCompletionNotificationRunsRef = useRef<Set<string>>(new Set());
   const completedNotificationRunsRef = useRef<Set<string>>(new Set());
 
@@ -12147,8 +12175,12 @@ export function ProjectView({
     projectMutationReadOnly,
   ]);
 
-  const handleSelectConversation = useCallback((id: string) => {
+  const handleSelectConversation = useCallback((id: string, measureNavigation = true) => {
     if (id === activeConversationId && failedMessagesConversationId !== id) return;
+    const navigationId = measureNavigation ? observeNavigation(() => navigationTiming.begin(
+      { kind: 'project', projectId: project.id, conversationId: activeConversationId },
+      { projectId: project.id, conversationId: id },
+    )) : null;
     setMessages([]);
     commitPreviewComments([]);
     setAttachedComments([]);
@@ -12175,7 +12207,11 @@ export function ProjectView({
         conversationId: id,
         fileName: openTabsState.active ?? null,
       },
-      { replace: true },
+      {
+        replace: true,
+        onCommit: () => { if (navigationId) observeNavigation(() => navigationTiming.commit(navigationId)); },
+        onCancel: reason => { if (navigationId) observeNavigation(() => navigationTiming.finish(navigationId, 'cancelled', reason)); },
+      },
     );
     setMessageLoadRetryNonce((nonce) => nonce + 1);
   }, [activeConversationId, commitPreviewComments, failedMessagesConversationId, project.id, openTabsState.active]);
@@ -13251,7 +13287,7 @@ export function ProjectView({
           returnedConversationId !== activeConversationId
           || failedMessagesConversationId === returnedConversationId
         ) {
-          handleSelectConversation(returnedConversationId);
+          handleSelectConversation(returnedConversationId, false);
         } else {
           scheduleConversationMessageRefresh(returnedConversationId);
         }

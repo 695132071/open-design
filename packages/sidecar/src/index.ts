@@ -34,6 +34,7 @@ export {
   resolveSourceRuntimeRoot,
 } from "./paths.js";
 export { allocatePort } from "./port.js";
+export { signalFromSupervisorExitCode, supervisorExitCode } from "./supervisor-exit.js";
 export type {
   SidecarClientOptions,
   SidecarConnection,

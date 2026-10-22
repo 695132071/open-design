@@ -14,6 +14,7 @@ import {
 import type { SidecarGenerationHandoffRequest } from "./client.js";
 import { requestJsonIpc } from "./json-ipc.js";
 import { retireSupervisedSidecarTargetTree } from "./process-retirement.js";
+import { supervisorExitCode } from "./supervisor-exit.js";
 import {
   readCurrentSidecarArgvStamp,
   resolvePrivateIpcPath,
@@ -180,8 +181,7 @@ function observeTarget(): void {
       return;
     }
     if (ownerTimer != null) clearInterval(ownerTimer);
-    if (signal != null || forwardedSignal != null) process.exitCode = 0;
-    else process.exitCode = code ?? 1;
+    process.exitCode = supervisorExitCode(code, signal, forwardedSignal);
   });
 }
 

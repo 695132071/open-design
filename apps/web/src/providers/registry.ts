@@ -329,18 +329,26 @@ export async function fetchAgentsStream(args: {
 // (skills.ts's `skillVisibleFromWorkspace`, mirroring `listInstalledPlugins`'s
 // one-way "unclaimed visible everywhere, claimed elsewhere hidden" rule).
 // Omit for callers that want the unfiltered, pre-workspace-isolation list.
+type CatalogReadObserver = { onReadResult?: (success: boolean) => void };
+function observeCatalogRead(options: CatalogReadObserver | undefined, success: boolean): void {
+  try { options?.onReadResult?.(success); } catch { /* Observation cannot affect catalog reads. */ }
+}
+
 export async function fetchSkills(
   workspaceContext?: WorkspaceCollabContext | null,
+  options?: CatalogReadObserver,
 ): Promise<SkillSummary[]> {
   try {
     const resp = await fetch(
       '/api/skills',
       workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
     );
-    if (!resp.ok) return [];
+    if (!resp.ok) { observeCatalogRead(options, false); return []; }
     const json = (await resp.json()) as { skills: SkillSummary[] };
+    observeCatalogRead(options, Array.isArray(json.skills));
     return json.skills ?? [];
   } catch {
+    observeCatalogRead(options, false);
     return [];
   }
 }
@@ -365,13 +373,15 @@ export async function fetchProjectMediaTasks(
 // fetched from a separate registry root so the EntryView Templates tab
 // and Settings → Skills surface stay decoupled. See
 // specs/current/skills-and-design-templates.md.
-export async function fetchDesignTemplates(): Promise<SkillSummary[]> {
+export async function fetchDesignTemplates(options?: CatalogReadObserver): Promise<SkillSummary[]> {
   try {
     const resp = await fetch('/api/design-templates');
-    if (!resp.ok) return [];
+    if (!resp.ok) { observeCatalogRead(options, false); return []; }
     const json = (await resp.json()) as { designTemplates: SkillSummary[] };
+    observeCatalogRead(options, Array.isArray(json.designTemplates));
     return json.designTemplates ?? [];
   } catch {
+    observeCatalogRead(options, false);
     return [];
   }
 }
@@ -655,6 +665,7 @@ export async function fetchDesignSystems(
   options?: FetchDesignSystemsOptions,
 ): Promise<DesignSystemSummary[]> {
   const result = await fetchDesignSystemsResult(workspaceContext, options);
+  observeCatalogRead(options, result.ok);
   return result.ok ? result.designSystems : [];
 }
 
@@ -667,7 +678,7 @@ export type DesignSystemsResult =
   | { ok: true; designSystems: DesignSystemSummary[] }
   | { ok: false };
 
-export interface FetchDesignSystemsOptions {
+export interface FetchDesignSystemsOptions extends CatalogReadObserver {
   /**
    * A realtime mutation invalidated the Team index. Every forced call starts
    * its own authoritative read; distinct mutations must never join an older
@@ -1308,13 +1319,15 @@ async function readImportError(resp: Response): Promise<SkillImportError> {
   };
 }
 
-export async function fetchPromptTemplates(): Promise<PromptTemplateSummary[]> {
+export async function fetchPromptTemplates(options?: CatalogReadObserver): Promise<PromptTemplateSummary[]> {
   try {
     const resp = await fetch('/api/prompt-templates');
-    if (!resp.ok) return [];
+    if (!resp.ok) { observeCatalogRead(options, false); return []; }
     const json = (await resp.json()) as { promptTemplates: PromptTemplateSummary[] };
+    observeCatalogRead(options, Array.isArray(json.promptTemplates));
     return json.promptTemplates ?? [];
   } catch {
+    observeCatalogRead(options, false);
     return [];
   }
 }

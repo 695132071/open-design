@@ -91,6 +91,8 @@ import {
   reportPreviewTransportRecovery,
   subscribePreviewIframeMessages,
   trackIframeLoad,
+  trackVisiblePreview,
+  isPreviewFrameVisible,
   type PreviewTransportDocumentState,
   type PreviewTransportRecoverySignal,
 } from '../observability/iframe-error';
@@ -11007,6 +11009,13 @@ function HtmlViewer({
     setPreviewSrcUrl(effectiveBasePreviewSrcUrl);
     setUrlSelectionBridgeReady(false);
   }, [effectiveBasePreviewSrcUrl, filesRefreshPending, previewSrcCarriesCurrentRefresh]);
+  useEffect(() => {
+    if (!workspaceActive || mode !== 'preview' || (!useUrlLoadPreview && previewSource === null)) return;
+    const frame = useUrlLoadPreview ? urlPreviewIframeRef.current : srcDocPreviewIframeRef.current;
+    if (!frame) return;
+    return trackVisiblePreview({ iframe: frame, renderMode: useUrlLoadPreview ? 'url_load' : 'srcdoc',
+      artifactKind: handoffArtifactKind ?? artifactKindToTracking({ fileKind: file.kind ?? null }) ?? null });
+  }, [workspaceActive, mode, useUrlLoadPreview, projectId, file.name, file.kind, handoffArtifactKind, reloadKey, activePreviewSrcUrl, previewSource]);
   const previewObservabilitySeenRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     previewObservabilitySeenRef.current = new Set();
@@ -11014,11 +11023,11 @@ function HtmlViewer({
   useEffect(() => {
     if (mode !== 'preview') return undefined;
     return subscribePreviewIframeMessages(({ source: messageSource, data }) => {
-      if (!workspaceActiveRef.current) return;
+      if (!workspaceActiveRef.current || document.visibilityState !== 'visible') return;
       const activeFrame = useUrlLoadPreview
         ? urlPreviewIframeRef.current
         : srcDocPreviewIframeRef.current;
-      if (!activeFrame || messageSource !== activeFrame.contentWindow) return;
+      if (!activeFrame || !isPreviewFrameVisible(activeFrame) || messageSource !== activeFrame.contentWindow) return;
       reportPreviewIframeMessage(data, {
         surface: 'artifact_preview',
         renderMode: useUrlLoadPreview ? 'url_load' : 'srcdoc',
@@ -11606,7 +11615,8 @@ function HtmlViewer({
     srcDocRecoveryAttemptRef.current = { generation, activationEpoch };
     const ready = readySrcDocTransportRef.current;
     cancelPendingSrcDocTransport();
-    reportPreviewTransportRecovery({
+    frame?.dispatchEvent(new Event('od:preview-transport-recovery'));
+    if (frame && isPreviewFrameVisible(frame)) reportPreviewTransportRecovery({
       surface: 'artifact_preview',
       renderMode: 'srcdoc',
       artifactId: anonymizeArtifactId({ projectId, fileName: file.name }),

@@ -7,8 +7,10 @@ import {
   clearExceptionTrackingContext,
   installErrorHandlers,
   patchExceptionTrackingAppVersion,
+  patchExceptionTrackingDistinctId,
   reportHandledException,
   reportSafetyEvent,
+  reportClientMetricEvent,
   setExceptionTrackingContext as setProductionExceptionTrackingContext,
 } from '../../src/analytics/error-tracking';
 
@@ -601,5 +603,106 @@ describe('exception attribution', () => {
     const list = (lastFetchedBody().properties as Record<string, unknown>)
       .$exception_list as Array<{ stacktrace?: { frames?: unknown[] } }>;
     expect(list[0]!.stacktrace?.frames?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('CS01 safety envelope', () => {
+  it('does not replace a resolved version with placeholder or unknown', () => {
+    setExceptionTrackingContext({ apiKey: 'phc_test', host: 'https://ingest.invalid', distinctId: 'install-1', appVersion: '1.2.3' });
+    patchExceptionTrackingAppVersion('0.0.0');
+    patchExceptionTrackingAppVersion('unknown');
+    reportSafetyEvent('client_boot_timing');
+    expect(lastFetchedBody().properties).toMatchObject({ app_version: '1.2.3' });
+  });
+
+  it('stamps stable event/device identity and separate occurrence/report timestamps', () => {
+    reportSafetyEvent('client_boot_timing', { duration_ms: 12 });
+    setExceptionTrackingContext({ apiKey: 'phc_test', host: 'https://ingest.invalid', distinctId: 'install-1', appVersion: '1.2.3', sessionId: 'session-1', telemetryEnv: 'test' });
+    const body = lastFetchedBody();
+    const properties = body.properties as Record<string, unknown>;
+    expect(properties).toMatchObject({
+      device_id: 'install-1', app_session_id: 'session-1', client_version: '1.2.3',
+      env: 'test', occurred_at: body.timestamp, reported_at: expect.any(String),
+      event_id: properties.$insert_id,
+    });
+  });
+});
+
+it('preserves buffered safety metric occurrence metadata and strips URL/content properties', () => {
+  const properties = {
+    metric_schema_version: 1, event_id: 'original-event', app_session_id: 'original-session',
+    app_version: '1.0.0-beta.1', client_version: '1.0.0-beta.1', channel: 'beta',
+    occurred_at: '2026-10-16T01:00:00.000Z', telemetry_capability: 'supported',
+    navigation_id: 'nav-1', navigation_type: 'project_enter', source_type: 'home',
+    target_type: 'project', result: 'cancelled', started_at: '2026-10-16T01:00:00.000Z', duration_ms: 100,
+    prompt: 'private input', full_url: 'https://private.invalid',
+  };
+  reportSafetyEvent('client_navigation_result', properties);
+  expect(fetchMock).not.toHaveBeenCalled();
+  setExceptionTrackingContext({ apiKey: 'phc_test', host: 'https://ingest.invalid', distinctId: 'install-1', appVersion: '2.0.0', sessionId: 'current-session', telemetryEnv: 'test' });
+  expect(fetchMock).toHaveBeenCalledOnce();
+  reportSafetyEvent('client_navigation_result', properties);
+  const body = lastFetchedBody();
+  expect(body).toMatchObject({ timestamp: properties.occurred_at, properties: {
+    event_id: 'original-event', $insert_id: 'original-event', app_session_id: 'original-session',
+    app_version: '1.0.0-beta.1', channel: 'beta', result: 'cancelled', env: 'test',
+    platform: null, os_version: null, arch: null,
+  } });
+  for (const key of ['prompt', 'full_url', '$current_url']) expect(body.properties).not.toHaveProperty(key);
+});
+
+
+it('buffers preview metrics and reports after product analytics is opted out', async () => {
+  const { applyConsent } = await import('../../src/analytics/client');
+  applyConsent(false);
+  const fields = { metric_schema_version: 1, preview_attempt_id: 'a', render_mode: 'srcdoc',
+    artifact_kind: null, started_at: new Date().toISOString(), telemetry_capability: 'supported',
+    path: '/private', url: 'https://private.invalid', content: 'secret', prompt: 'secret', pid: 123 };
+  expect(reportClientMetricEvent('client_preview_attempt', fields)).toBe(true);
+  expect(fetchMock).not.toHaveBeenCalled();
+  setExceptionTrackingContext({ apiKey: 'phc_test', host: 'https://ingest.invalid', distinctId: 'install' });
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(reportClientMetricEvent('client_preview_result', { ...fields, result: 'success', duration_ms: 1, monitoring_kind: 'visible_content' })).toBe(true);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  for (const [, init] of fetchMock.mock.calls) {
+    const properties = JSON.parse(init.body).properties;
+    for (const key of ['path', 'url', 'content', 'prompt', 'pid', '$current_url']) expect(properties).not.toHaveProperty(key);
+  }
+});
+
+it('keeps legacy preview/app-white-screen/firstpaint events on the safety channel after opt-out', async () => {
+  const { applyConsent } = await import('../../src/analytics/client');
+  applyConsent(false);
+  const names = ['client_preview_white_screen', 'client_preview_runtime_error', 'client_preview_resource_error', 'client_white_screen', 'client_chat_first_paint'];
+  for (const event of names) reportSafetyEvent(event, { monitoring_kind: 'fixture' });
+  expect(fetchMock).not.toHaveBeenCalled();
+  setExceptionTrackingContext({ apiKey: 'phc_test', host: 'https://ingest.invalid', distinctId: 'install' });
+  expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).event)).toEqual(names);
+});
+
+describe('safety identity on a fresh install (OPEND-4220)', () => {
+  const base = { apiKey: 'phc_test', host: 'https://ingest.invalid', appVersion: '1.2.3', sessionId: 'session-1', telemetryEnv: 'test' };
+
+  it('switches renderer stability events to the installation id minted after bootstrap', () => {
+    setExceptionTrackingContext({ ...base, distinctId: 'anon-bootstrap' });
+    patchExceptionTrackingDistinctId('install-1');
+    reportSafetyEvent('client_boot_timing', { duration_ms: 1 });
+    const body = lastFetchedBody();
+    expect(body.distinct_id).toBe('install-1');
+    expect((body.properties as Record<string, unknown>).device_id).toBe('install-1');
+  });
+
+  it('keeps the installation id when bootstrap resolves after setIdentity', () => {
+    patchExceptionTrackingDistinctId('install-1');
+    setExceptionTrackingContext({ ...base, distinctId: 'anon-bootstrap' });
+    reportSafetyEvent('client_boot_timing', { duration_ms: 1 });
+    expect((lastFetchedBody().properties as Record<string, unknown>).device_id).toBe('install-1');
+  });
+
+  it('ignores a missing installation id', () => {
+    setExceptionTrackingContext({ ...base, distinctId: 'anon-bootstrap' });
+    patchExceptionTrackingDistinctId(null);
+    reportSafetyEvent('client_boot_timing', { duration_ms: 1 });
+    expect((lastFetchedBody().properties as Record<string, unknown>).device_id).toBe('anon-bootstrap');
   });
 });

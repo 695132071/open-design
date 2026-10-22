@@ -223,3 +223,26 @@ describe("isFirstPartyMailtoUrl", () => {
     );
   });
 });
+
+// Execute the actual registered handler with native surfaces replaced by local
+// fakes. This observes recovery policy without starting an Electron app.
+test('actual renderer handler excludes clean teardown and bounds repeated native faults', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const ts = await import('typescript');
+  const { vi } = await import('vitest');
+  const block = /window\.webContents\.on\("render-process-gone",[\s\S]*?\n {2}\}\);/.exec(runtimeSource)![0];
+  const report = vi.fn(); const reload = vi.fn(); const parked = vi.fn();
+  const breaker = new RendererCrashLoopBreaker();
+  let handler!: (_event: unknown, details: { reason: string; exitCode?: number }) => void;
+  runInNewContext(ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, {
+    window: { isDestroyed: () => false, webContents: { isDestroyed: () => false, getURL: () => 'about:blank', on: (_name: string, fn: typeof handler) => { handler = fn; } } },
+    console: { error() {}, warn() {} }, rendererCrashLoop: breaker, options: {},
+    reportRendererCrash: report, markRendererFailed: reload, showRendererCrashScreen: parked,
+  });
+  handler(null, { reason: 'clean-exit', exitCode: 0 });
+  expect(reload).not.toHaveBeenCalled(); expect(breaker.isOpen()).toBe(false);
+  for (const reason of ['killed', 'oom', 'crashed', 'crashed', 'crashed', 'crashed']) handler(null, { reason, exitCode: 1 });
+  expect(report).toHaveBeenCalledTimes(6); // one clean carrier + five bounded faults
+  expect(report.mock.calls.at(-1)![1]).toMatchObject({ loop_tripped: true });
+  expect(parked).toHaveBeenCalledOnce(); expect(breaker.isOpen()).toBe(true);
+});
