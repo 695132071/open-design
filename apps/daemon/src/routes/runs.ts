@@ -1039,7 +1039,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     let projectedSnapshotId: string | undefined;
     try {
       const strategyTask = strategyTaskForRun(run, true);
-      const projection = strategyTask ? projectStrategyTask(strategyTask, run.id) : null;
+      const projection = strategyTask ? projectStrategyTask(strategyTask, run.id, db) : null;
       if (projection) run.strategyTask = projection;
       if (strategyTask && isLegacyHydratedRunWithoutAppliedSnapshot(run)) {
         projectedSnapshotId = strategyTask.snapshotId;
@@ -2729,7 +2729,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       let strategyTask;
       try {
         const task = strategyTaskForRun(run);
-        strategyTask = task ? projectStrategyTask(task, run.id) : null;
+        strategyTask = task ? projectStrategyTask(task, run.id, db) : null;
       } catch (error) {
         if (
           error instanceof InvalidFrozenSkillPackageError
@@ -2805,7 +2805,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     let strategyTask;
     try {
       const task = strategyTaskForRun(run);
-      strategyTask = task ? projectStrategyTask(task, run.id) : null;
+      strategyTask = task ? projectStrategyTask(task, run.id, db) : null;
     } catch (error) {
       if (
         !(error instanceof InvalidFrozenSkillPackageError)
@@ -3373,7 +3373,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
           'strategy task changed while cancellation was being applied',
         );
       }
-      cancelRun.strategyTask = projectStrategyTask(canceled, cancelRun.id);
+      cancelRun.strategyTask = projectStrategyTask(canceled, cancelRun.id, db);
     }
     // Logical CAS wins before physical finish: the emitted end frame therefore
     // carries the terminal task projection and can never advertise a running

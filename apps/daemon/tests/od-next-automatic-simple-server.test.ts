@@ -915,6 +915,7 @@ process.exit(127);
       taskExecutionId: asked.taskExecutionId,
     });
     expect(answer.strategyTask!.taskExecutionId).not.toBe(asked.taskExecutionId);
+    expect(answer.strategyTask!.display?.id).not.toBe(first.strategyTask!.display?.id);
     const task = await waitForTask(answer.strategyTask!.taskExecutionId, 'completed');
     expect(task.continuedFromTaskExecutionId).toBe(asked.taskExecutionId);
     expect(task.runs).toHaveLength(2);

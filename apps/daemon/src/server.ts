@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { recordStrategyTaskRunLifecycle } from './strategies/task-display.js';
 import { observeDiscoveryEvent } from './strategies/od-next/discovery-observation.js';
 import { assertCommentFileNotPending } from './collab/comment-file-retirements.js';
 import { captureJsonBodySize } from './http/json-body-size.js';
@@ -8354,6 +8355,18 @@ export async function startServer({
         if (incidentId) run.diagnosticIncidentIds = [...new Set([...(run.diagnosticIncidentIds ?? []), incidentId])].slice(-100);
       },
       onEventEmitted: (run, record) => {
+        if (record.event === 'start' || record.event === 'end' || record.event === 'run_resume_attempted') {
+          try {
+          recordStrategyTaskRunLifecycle(db, { runId: run.id, phase: record.event === 'run_resume_attempted' ? 'prepare' : record.event,
+            at: record.timestamp, status: run.status, attempt: run.manualResumeAttemptCount ?? 0,
+            authenticatedDoneConclusion: run.authenticatedDoneConclusion });
+          const displayTask = getStrategyTaskExecutionByRunId(db, run.id);
+          if (displayTask) {
+            run.strategyTask = projectStrategyTask(displayTask, run.id, db);
+            record.data.strategyTask = run.strategyTask;
+          }
+          } catch (error) { console.warn('[task-display] lifecycle projection unavailable', error instanceof Error ? error.message : 'unknown'); }
+        }
         if (record.event === 'start') automaticDiagnostics?.trackRun(run.id, {
           sourceId: `run:${run.id}:interrupted:${run.manualResumeAttemptCount ?? 0}:${record.timestamp}`,
           kind: 'active_run', at: record.timestamp, runId: run.id, agentId: run.agentId,
@@ -8414,7 +8427,7 @@ export async function startServer({
         try {
           reconcileStrategyTaskRunTerminal(db, { runId: run.id, status });
           const latestTask = getStrategyTaskExecutionByRunId(db, run.id);
-          if (latestTask) run.strategyTask = projectStrategyTask(latestTask, run.id);
+          if (latestTask) run.strategyTask = projectStrategyTask(latestTask, run.id, db);
         } catch (error) {
           if (!(error instanceof InvalidFrozenSkillPackageError) && !(error instanceof InvalidStrategyTaskRecordError)) throw error;
           // The Run is already failing closed for the corrupt task state. Do
@@ -12586,7 +12599,7 @@ export async function startServer({
       && !strategyRunMapping?.coldStartFinalText
     ) {
       const ended = endFailedAutomaticContinuation(db, { runId: run.id });
-      if (ended) run.strategyTask = projectStrategyTask(ended, run.id);
+      if (ended) run.strategyTask = projectStrategyTask(ended, run.id, db);
       throw new Error(
         'OD Next continuation requires the locked native session; cold re-seeding is forbidden.',
       );
@@ -16807,7 +16820,7 @@ export async function startServer({
           || resumeSideEffects.toolCallSeen || resumeSideEffects.artifactWriteSeen
           || resumeSideEffects.liveArtifactSeen || resumeSideEffects.userVisibleOutputSeen)) {
           const ended = endFailedAutomaticContinuation(db, { runId: run.id });
-          if (ended) run.strategyTask = projectStrategyTask(ended, run.id);
+          if (ended) run.strategyTask = projectStrategyTask(ended, run.id, db);
           send('error', createSseErrorPayload(
             'AGENT_SESSION_RESUME_FAILED',
             'The OD Next native session is unavailable and a safe cold restart cannot be proven.',
@@ -17558,10 +17571,10 @@ export async function startServer({
             finishStrategyAwarePhysicalRun('failed', 1, signal);
             return;
           }
-          run.strategyTask = projectStrategyTask(transition.result.task, run.id);
+          run.strategyTask = projectStrategyTask(transition.result.task, run.id, db);
           if (transition.start && transition.prepared?.kind === 'ready') {
             const nextRun = transition.prepared.run;
-            nextRun.strategyTask = projectStrategyTask(transition.result.task, nextRun.id);
+            nextRun.strategyTask = projectStrategyTask(transition.result.task, nextRun.id, db);
             pendingStrategyContinuation = {
               run: nextRun,
               chatBody: automaticContinuationChatBody,
@@ -17621,6 +17634,7 @@ export async function startServer({
                 continuation.run.strategyTask = projectStrategyTask(
                   latestTask,
                   continuation.run.id,
+                  db,
                 );
               }
               throw error;

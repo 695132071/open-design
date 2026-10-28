@@ -1428,6 +1428,8 @@ export interface ChatMessage {
    * back explicitly and reload recovery follows its active physical Run.
    */
   strategyTaskExecutionId?: string;
+  /** Host-projected presentation fact; physical task handles remain unchanged. */
+  taskDisplay?: import('../plugins/strategy-v2.js').TaskDisplayProjection;
   /**
    * Position of this message's Run within its logical task chain. A Full Plan
    * turn spans several physical Runs (request -> production) that the user

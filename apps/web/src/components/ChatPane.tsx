@@ -1,3 +1,4 @@
+import { withTaskPresentation, newerTaskDisplay, type PresentedChatMessage } from '../runtime/chat/task-presentation';
 import { reportExperienceEvent } from '../observability/experience-diagnostics';
 import { conversationMetaLabel } from '../runtime/chat/conversation-time';
 export { conversationMetaLabel } from '../runtime/chat/conversation-time';
@@ -1129,6 +1130,7 @@ export function foldStrategyTaskTurns(messages: ChatMessage[]): FoldedChatMessag
       // internal step, not the turn ending.
       runId: message.runId ?? head.runId,
       runStatus: message.runStatus ?? head.runStatus,
+      taskDisplay: newerTaskDisplay(head.taskDisplay, message.taskDisplay),
       // Completion belongs to the final physical Run, including false or
       // absent legacy values. Never inherit the planning Run's verdict.
       strategyTaskDelivered: message.strategyTaskDelivered,
@@ -1480,16 +1482,19 @@ export function ChatPane({
   const { workspaceContext } = useProjectCollabContext();
   const { t, locale } = useI18n();
   const analytics = useAnalytics();
+  const previousTaskPresentation = useRef<PresentedChatMessage[]>([]);
   const displayMessages = useMemo(
-    () => foldStrategyTaskTurns(
-      messages
-        .filter((message) => !shouldHideEmptyBrandAssistantMessage(message, projectMetadata))
-        // P0-24 N15 / Q7: a turn the browser only lost contact with is drawn
-        // as in progress until the run record decides it (see
-        // pending-disconnect) — also after the user left and came back, when
-        // the reconnect row is gone until recovery reattaches.
-        .map(projectTurnAwaitingRunRecord),
-    ),
+    () => {
+      const presented = withTaskPresentation(foldStrategyTaskTurns(
+        messages
+          .filter((message) => !shouldHideEmptyBrandAssistantMessage(message, projectMetadata))
+          // A lost stream has no Run verdict yet. Project it before task
+          // aggregation so the merged process does not freeze as failed.
+          .map(projectTurnAwaitingRunRecord),
+      ), previousTaskPresentation.current);
+      previousTaskPresentation.current = presented;
+      return presented;
+    },
     [messages, projectMetadata],
   );
   /**
@@ -5417,6 +5422,8 @@ function ChatRows({
     () => previousTodosByAssistantMessageId(messages),
     [messages],
   );
+  const taskRecordContext = useMemo(() => ({mediaTasksByRunId,previousTodosByMessageId}),
+    [mediaTasksByRunId,previousTodosByMessageId]);
   const assistantRoleByMessageId = useMemo(() => {
     const byMessageId = new Map<string, boolean>();
     let previousAssistantIdentity: string | null = null;
@@ -5474,6 +5481,8 @@ function ChatRows({
     const assistantRow = (
       <AssistantMessage
         message={m}
+        taskPresentation={(m as PresentedChatMessage).taskPresentation}
+        taskRecordContext={(m as PresentedChatMessage).taskPresentation?.owner ? taskRecordContext : undefined}
         streaming={messageStreaming}
         projectId={projectId}
         projectKind={projectKindForTracking}
