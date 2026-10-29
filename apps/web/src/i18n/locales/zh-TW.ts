@@ -25,7 +25,7 @@ export const zhTW: Dict = {
 
   "homeInvite.banner": "免費邀請同事，一起看設計、聊想法",
   "homeInvite.invite": "邀請",
-  "homeInvite.dismiss": "關閉邀請橫條",
+  "homeInvite.dismiss": "關閉邀請橫幅",
   "homeInvite.sent": "已向 {n} 位同事傳送邀請",
   "fileViewer.publishFileContentUnavailable": "部分已上傳檔案缺失或未通過完整性檢查，請重試。",
   "fileViewer.publishFileConflict": "發佈或上傳狀態已變更，請重新整理分享面板後重試。",
@@ -113,7 +113,7 @@ export const zhTW: Dict = {
   "workspaceInvite.dialogAria": "邀請成員",
   "workspaceInvite.title": "邀請成員",
   "workspaceInvite.freePlanBody": "The free plan includes 1 seat. Inviting teammates will guide you to upgrade to Teams.",
-  "workspaceInvite.teamPlanBody": "新成員加入後，可使用共享額度，訪問共享專案，與團隊展開評論和協作。",
+  "workspaceInvite.teamPlanBody": "新成員加入後，可使用共享額度、存取共享專案，並與團隊評論和協作。",
   "workspaceInvite.seatsExhaustedBody": "目前工作空間的席次已用完，先增加席次後即可邀請同事。",
   "workspaceInvite.seatsExhaustedAction": "查看席次與方案",
   "workspaceInvite.emailLabel": "電子郵件",
