@@ -76,9 +76,9 @@ function project(overrides: Partial<Project>): Project {
   };
 }
 
-const MINE = project({ id: 'p-mine', name: 'My draft', updatedAt: 3 });
-const SHARED = project({ id: 'p-shared', name: 'Shared with the team', updatedAt: 2 });
-const OLDER_MINE = project({ id: 'p-older', name: 'Older draft', updatedAt: 1 });
+const MINE = project({ id: 'p-mine', name: 'My draft', updatedAt: 3, lastUserQueryAt: 3 });
+const SHARED = project({ id: 'p-shared', name: 'Shared with the team', updatedAt: 2, lastUserQueryAt: 2 });
+const OLDER_MINE = project({ id: 'p-older', name: 'Older draft', updatedAt: 1, lastUserQueryAt: 1 });
 const PROJECTS = [MINE, SHARED, OLDER_MINE];
 const isShared = (id: string) => id === SHARED.id;
 

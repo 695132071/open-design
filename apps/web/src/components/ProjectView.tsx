@@ -263,6 +263,7 @@ import {
   loadTabs,
   patchConversation,
   patchProject,
+  registerQueuedSubmission,
   ProjectConversationsHttpError,
   saveMessage,
   startGeneratedPluginShareTask,
@@ -485,6 +486,8 @@ type ProjectChatSendMeta = ChatSendMeta & {
    *  lives in the queue item, so a pre-run block (e.g. the AMR balance gate)
    *  must NOT re-queue it — only pause further drains. */
   queueDrain?: boolean;
+  systemSubmission?: boolean;
+  queuedSubmissionId?: string;
   /** The OpenDesign Cloud balance gate already ran for this exact send at
    *  the home submit (with any soft warning answered there); skip re-gating
    *  so the user is never double-prompted for one task. */
@@ -980,7 +983,7 @@ interface Props {
   onOpenPetSettings?: () => void;
   onBack: () => void;
   onClearPendingPrompt: () => void;
-  onTouchProject: () => void;
+  onTouchProject: (sentAt?: number) => void;
   onProjectChange: (next: Project) => void;
   /** Rename fences from the era of the inline title rename in the chat card.
    *  The card no longer renders a title (OPEND-3128: the project is named once,
@@ -8826,8 +8829,14 @@ export function ProjectView({
     }
     const next = [...queuedChatSendsRef.current, item];
     commitQueuedChatSends(next);
+    if (item.meta?.systemSubmission) return true;
+    const ownerGeneration = currentWorkspaceAccountGeneration();
+    void registerQueuedSubmission(project.id, { id: item.id, conversationId: item.conversationId,
+      submittedAt: item.createdAt }, projectRunWorkspaceContext).then((receipt) => {
+      if (receipt && currentWorkspaceAccountGeneration() === ownerGeneration) onTouchProject(receipt.acceptedAt);
+    });
     return true;
-  }, [commitQueuedChatSends]);
+  }, [commitQueuedChatSends, onTouchProject, project.id, projectRunWorkspaceContext]);
 
   const removeQueuedChatSend = useCallback((id: string) => {
     const next = queuedChatSendsRef.current.filter((item) => item.id !== id);
@@ -9726,11 +9735,17 @@ export function ProjectView({
         });
         recordFirstLoopStep(analytics.track, 'prompt_sent', project.id);
       }
+      if (sendAccountGeneration !== currentWorkspaceAccountGeneration()) {
+        retractPaintedTurn();
+        return false;
+      }
       activeCompletionNotificationRunsRef.current.add(assistantId);
       updateConversationLatestRun(config.mode === 'daemon' ? 'running' : 'queued');
       setArtifact(null);
       savedArtifactRef.current = null;
-      onTouchProject();
+      // Queued sends already recorded their send time when they entered the
+      // queue. A manual retry is a new user action; replaying a queue is not.
+      // Sorting advances only from a server acceptance receipt.
       if (!retryTarget) {
         // A send whose id was decided from its occupancy (an inline question
         // form's answer) claims that row once: the daemon keeps whichever
@@ -11060,6 +11075,11 @@ export function ProjectView({
           userMessageId: userMsg.id,
           assistantMessageId: assistantId,
           clientRequestId,
+          submission: { id: meta?.queuedSubmissionId ?? clientRequestId,
+            source: meta?.systemSubmission ? 'system' : meta?.queueDrain ? 'queue' : 'user' },
+          onUserSubmissionAccepted: (receipt) => {
+            if (currentWorkspaceAccountGeneration() === sendAccountGeneration) onTouchProject(receipt.acceptedAt);
+          },
           skillId: project.skillId ?? null,
           skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
           context: runContext,
@@ -11311,6 +11331,11 @@ export function ProjectView({
           userMessageId: userMsg.id,
           assistantMessageId: assistantId,
           clientRequestId,
+          submission: { id: meta?.queuedSubmissionId ?? clientRequestId,
+            source: meta?.systemSubmission ? 'system' : meta?.queueDrain ? 'queue' : 'user' },
+          onUserSubmissionAccepted: (receipt) => {
+            if (currentWorkspaceAccountGeneration() === sendAccountGeneration) onTouchProject(receipt.acceptedAt);
+          },
           skillId: project.skillId ?? null,
           skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
           context: runContext,
@@ -11717,18 +11742,28 @@ export function ProjectView({
   const startQueuedChatSend = useCallback(async (item: QueuedChatSend): Promise<boolean> => {
     let started = false;
     try {
+      if (!item.meta?.systemSubmission) {
+        const queueAccountGeneration = currentWorkspaceAccountGeneration();
+        const receipt = await registerQueuedSubmission(project.id, { id: item.id,
+          conversationId: item.conversationId, submittedAt: item.createdAt }, projectRunWorkspaceContext);
+        if (!mountedRef.current || queueAccountGeneration !== currentWorkspaceAccountGeneration()) return false;
+        if (!receipt) {
+          releaseCommentsOfSendWithoutRun(item);
+          return false;
+        }
+      }
       started = await handleSend(
         item.prompt,
         item.attachments,
         item.commentAttachments,
-        { ...(item.meta ?? {}), queueDrain: true },
+        { ...(item.meta ?? {}), queueDrain: true, queuedSubmissionId: item.id },
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
     if (!started) releaseCommentsOfSendWithoutRun(item);
     return started;
-  }, [handleSend, releaseCommentsOfSendWithoutRun]);
+  }, [handleSend, releaseCommentsOfSendWithoutRun, project.id, projectRunWorkspaceContext]);
   // An awaited preflight may outlive the active run. Dispatch through the
   // current render so handleSend sees its settled busy state, after the
   // explicit item's scope/account/model guards have been checked again.
@@ -12108,7 +12143,7 @@ export function ProjectView({
     const repairText = autoAuditRepairSeed.value.trim();
     setAutoAuditRepairSeed(null);
     if (!repairText) return;
-    void handleSend(repairText, [], []);
+    void handleSend(repairText, [], [], { systemSubmission: true });
   }, [
     activeConversationId,
     autoAuditRepairSeed,
@@ -15194,6 +15229,7 @@ export function ProjectView({
             />
           ) : null}
           chatConfig={config}
+          onTouchProject={onTouchProject}
           chatAgentsById={agentsById}
           handoffAgents={agents}
           handoffArtifactId={headerArtifact.artifact_id}
