@@ -37,6 +37,14 @@ const validEmail = (value: string) => {
 };
 const canonicalRole = (role: string): WorkspaceInviteRole => role === 'admin' || role === '管理员' ? 'admin' : 'member';
 
+/** Keep translated sentences together while allowing a long sentence to wrap naturally. */
+function onboardingSentences(text: string, locale: Locale) {
+  const sentences = new Intl.Segmenter(locale, { granularity: 'sentence' }).segment(text);
+  return Array.from(sentences, ({ segment }, index) => (
+    <span className={styles.sentence} dir="auto" key={index}>{segment}</span>
+  ));
+}
+
 /** The local form retains authoritative per-row results and never retries sent recipients. */
 export function InviteDialog({ open, onClose, workspaceContext, onSubmit, canAssignRoles = true, entryFrom: requestedEntry = 'workspace_switcher', variant = 'dialog', onFinish }: Props) {
   const onboarding = variant === 'onboarding';
@@ -311,7 +319,7 @@ export function InviteDialog({ open, onClose, workspaceContext, onSubmit, canAss
         <p>{t('workspaceInvite.completeReceipt').replace('{count}', String(sentCount))}<br />{t('workspaceInvite.completeBody')}</p>
         <Button className={styles.completeEnter} aria-describedby={`${id}-countdown`} onClick={enterWorkbench}>{t('workspaceInvite.enterWorkspace')}</Button>
         <p className={styles.countdown} id={`${id}-countdown`}>{t('workspaceInvite.completeCountdown').split('{seconds}')[0]}<span>{countdown}</span>{t('workspaceInvite.completeCountdown').split('{seconds}')[1]}</p>
-      </div> : <><header className={styles.heading}><h2 tabIndex={onboarding ? undefined : -1}>{t(onboarding ? 'workspaceInvite.onboardingTitle' : 'workspaceInvite.title')}</h2>
+      </div> : <><header className={styles.heading}><h2 tabIndex={onboarding ? undefined : -1}>{onboarding ? onboardingSentences(t('workspaceInvite.onboardingTitle'), locale) : t('workspaceInvite.title')}</h2>
         {!onboarding ? <>
         <span className={styles.help} onMouseEnter={() => setHelpOpen(true)} onMouseLeave={() => setHelpOpen(false)}>
           <Button ref={helpTrigger} className={styles.info} aria-label={t('workspaceInvite.helpLabel')} aria-describedby={helpOpen ? `${id}-help` : undefined}
@@ -321,7 +329,7 @@ export function InviteDialog({ open, onClose, workspaceContext, onSubmit, canAss
         <Button className={styles.close} onClick={close} aria-label={t('workspaceInvite.cancel')}>✕</Button>
         </> : null}
       </header>
-      {onboarding ? <p className={styles.context}>{t('workspaceInvite.onboardingBody1')}<br />{t('workspaceInvite.onboardingBody2')}</p> : <p className={styles.context}>{workspaceContext?.workspaceName ?? workspaceContext?.teamName ?? ''}{workspaceContext?.memberCount === undefined ? null : <> · {t('workspaceInvite.memberCount').replace('{count}', String(workspaceContext.memberCount))}</>}</p>}
+      {onboarding ? <p className={styles.context}>{onboardingSentences(t('workspaceInvite.onboardingBody1'), locale)}{' '}{onboardingSentences(t('workspaceInvite.onboardingBody2'), locale)}</p> : <p className={styles.context}>{workspaceContext?.workspaceName ?? workspaceContext?.teamName ?? ''}{workspaceContext?.memberCount === undefined ? null : <> · {t('workspaceInvite.memberCount').replace('{count}', String(workspaceContext.memberCount))}</>}</p>}
       <form onSubmit={event => { event.preventDefault(); void submit(); }} noValidate>
         <div className={`${styles.labels} ${rows.length === 1 ? styles.single : ''}`}><span>{t(onboarding ? 'workspaceInvite.onboardingEmailLabel' : 'workspaceInvite.emailLabel')}</span><span>{t('workspaceInvite.roleLabel')}</span></div>
         <div className={styles.rows} data-invite-rows>

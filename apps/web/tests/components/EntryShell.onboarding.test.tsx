@@ -2590,7 +2590,7 @@ it('shows the first-registration invite on a hydrated login before another Conti
       onAgentChange={agentId => { props.onAgentChange(agentId); setConfig(old => ({ ...old, agentId })); }} /></I18nProvider>;
   }
   render(<RuntimeHarness />);
-  await screen.findByText('Invite colleagues for free. Design together.');
+  await screen.findByRole('heading', { name: /^Invite colleagues for free\.\s*Design together\.$/ });
   expect(activeChange).toHaveBeenLastCalledWith(true);
   expect(props.onAgentChange).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
@@ -2611,7 +2611,7 @@ it.each([
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => String(input) === '/api/workspace/context' ? jsonResponse({ context: base }) : jsonResponse(status)) as typeof fetch;
   const props = renderOnboarding({ config, amrLoggedIn: true, amrSessionState: 'authenticated', amrAccountId: status.user.id, amrRegistrationStatus: status });
   await screen.findByRole('button', { name: /Continue \(signed in\)/i });
-  expect(screen.queryByText('Invite colleagues for free. Design together.')).toBeNull();
+  expect(screen.queryByRole('heading', { name: /^Invite colleagues for free\.\s*Design together\.$/ })).toBeNull();
   expect(props.onAgentChange).not.toHaveBeenCalled();
   expect(props.onCompleteOnboarding).not.toHaveBeenCalled();
 });

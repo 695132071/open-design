@@ -11763,7 +11763,7 @@ export function ProjectView({
     }
     if (!started) releaseCommentsOfSendWithoutRun(item);
     return started;
-  }, [handleSend, releaseCommentsOfSendWithoutRun, project.id, projectRunWorkspaceContext]);
+  }, [handleSend, releaseCommentsOfSendWithoutRun]);
   // An awaited preflight may outlive the active run. Dispatch through the
   // current render so handleSend sees its settled busy state, after the
   // explicit item's scope/account/model guards have been checked again.

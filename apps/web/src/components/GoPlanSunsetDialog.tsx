@@ -45,6 +45,11 @@ export function GoPlanSunsetDialog({
   const descriptionId = useId();
 
   useEffect(() => {
+    if (!active) return;
+    return lockWebModalScroll();
+  }, [active]);
+
+  useEffect(() => {
     if (!active) {
       exposureTrackedRef.current = false;
       setDismissing(false);
@@ -64,11 +69,6 @@ export function GoPlanSunsetDialog({
       locale,
     });
   }, [active, analytics.track, currentPlanId, locale]);
-
-  useEffect(() => {
-    if (!active) return;
-    return lockWebModalScroll();
-  }, [active]);
 
   const trackClick = useCallback((element: DismissElement | 'view_other_subscriptions') => {
     trackGoPlanSunsetModalClick(analytics.track, {

@@ -1583,14 +1583,14 @@
 .entry-nav-rail__search input::placeholder { color: var(--text-faint); }
 
 /* Team switcher row */
-/* Team block: separated from the personal nav above by a very soft divider. */
+/* Separate navigation groups using the same material separator as rail menus. */
 .entry-nav-rail__team-section {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 42%, transparent);
+  border-top: 1px solid var(--material-separator);
 }
 .entry-nav-rail__team {
   position: relative;
