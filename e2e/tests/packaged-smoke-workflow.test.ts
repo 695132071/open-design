@@ -3527,6 +3527,96 @@ process.stdin.on("end", () => {
     expect(publishStep).toContain(artifactMode);
   });
 
+  it("[P1] reserves prerelease versions before building and validates ownership before publishing", async () => {
+    const workflow = parseYaml(await readFile(releasePrereleaseWorkflowPath, "utf8"));
+    expect(workflow.env).toMatchObject({
+      RELEASE_REPOSITORY: "${{ github.repository }}",
+      RELEASE_RUN_ID: "${{ github.run_id }}",
+      RELEASE_WORKFLOW: "${{ github.workflow }}",
+    });
+    const metadata = workflow.jobs.metadata;
+    const reservation = metadata.steps.find((step: { id?: string }) => step.id === "reservation");
+    expect(reservation?.run).toBe("pnpm exec tools-release reserve-version prerelease");
+    expect(reservation.env.RELEASE_VERSION_CANDIDATE).toBe("${{ steps.prerelease.outputs.release_version }}");
+    for (const name of ["prerelease_version", "prerelease_number", "release_version", "release_number", "release_name", "state_source", "version_lock_key"]) {
+      expect(metadata.outputs[name]).toBe(`\${{ steps.reservation.outputs.${name} }}`);
+    }
+    for (const job of Object.values(workflow.jobs) as Array<{ steps?: Array<{ run?: string; env?: Record<string, string> }> }>) {
+      for (const step of job.steps ?? []) {
+        if (!/tools-release publish-(platform|metadata)$/.test(step.run ?? "")) continue;
+        expect(step.env?.RELEASE_VERSION_LOCK_REQUIRED).toBe("true");
+        expect(step.env?.RELEASE_VERSION_LOCK_KEY).toBe("${{ needs.metadata.outputs.version_lock_key }}");
+      }
+    }
+  });
+
+  it("[P1] skips legacy prerelease artifacts without locks and reserves separate versions for concurrent runs", async () => {
+    const version = "1.2.3-prerelease.4";
+    const legacyKey = `prerelease/versions/${version}/open-design-${version}-mac-arm64.dmg`;
+    const fixture = await startReleaseMetadataObjectStore({ [legacyKey]: Buffer.from("old signed dmg") });
+    const root = await mkdtemp(join(tmpdir(), "od-prerelease-reservation-"));
+    const reserve = async (runId: string, attempt = "1", overrides: Record<string, string> = {}) => {
+      const metadataDir = join(root, `${runId}-${attempt}`);
+      await mkdir(metadataDir, { recursive: true });
+      const outputsPath = join(metadataDir, "outputs.txt");
+      await execFileAsync(process.execPath, ["--experimental-strip-types", "tools/release/src/index.ts", "reserve-version", "prerelease"], {
+        cwd: workspaceRoot,
+        env: {
+          ...process.env,
+          BASE_VERSION: "1.2.3",
+          GITHUB_OUTPUT: outputsPath,
+          RELEASE_CHANNEL: "prerelease",
+          RELEASE_COMMIT: "abc123",
+          RELEASE_LANE: "release-prerelease",
+          RELEASE_METADATA_DIR: metadataDir,
+          RELEASE_PUBLIC_ORIGIN: "https://releases.example.test",
+          RELEASE_REPOSITORY: "nexu-io/open-design",
+          RELEASE_RUN_ID: runId,
+          RELEASE_RUN_ATTEMPT: attempt,
+          RELEASE_STORAGE_ACCESS_KEY_ID: "test-access-key",
+          RELEASE_STORAGE_BUCKET: fixture.bucket,
+          RELEASE_STORAGE_ENDPOINT: fixture.endpointUrl,
+          RELEASE_STORAGE_REGION: "auto",
+          RELEASE_STORAGE_SECRET_ACCESS_KEY: "test-secret-key",
+          RELEASE_VERSION_CANDIDATE: version,
+          RELEASE_VERSION_MANUAL_OVERRIDE: "false",
+          RELEASE_VERSION_RESERVATION_MAX_ATTEMPTS: "10",
+          RELEASE_WORKFLOW: "release-prerelease",
+          ...overrides,
+        },
+      });
+      return Object.fromEntries((await readFile(outputsPath, "utf8")).trim().split("\n").map((line) => {
+        const separator = line.indexOf("=");
+        return [line.slice(0, separator), line.slice(separator + 1)];
+      }));
+    };
+    try {
+      const results = await Promise.all([reserve("101"), reserve("102")]);
+      expect(results.map((result) => result.release_version).sort()).toEqual(["1.2.3-prerelease.5", "1.2.3-prerelease.6"]);
+      expect(fixture.object(legacyKey)).toEqual(Buffer.from("old signed dmg"));
+      expect(fixture.object(`prerelease/versions/${version}/version.lock.json`)).toBeNull();
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index]!;
+        expect(JSON.parse(fixture.object(result.version_lock_key!)!.toString())).toMatchObject({
+          channel: "prerelease", releaseVersion: result.release_version, owner: { runId: index + 101 },
+        });
+      }
+      const retry = await reserve("101");
+      expect(retry.release_version).toBe(results[0]!.release_version);
+      expect(retry.prerelease_version).toBe(retry.release_version);
+      expect(retry.prerelease_number).toBe(retry.release_number);
+      const rerun = await reserve("101", "2");
+      expect(rerun.release_version).toBe("1.2.3-prerelease.7");
+      await expect(reserve("103", "1", { RELEASE_VERSION_MANUAL_OVERRIDE: "true" }))
+        .rejects.toThrow("already occupied");
+      await expect(reserve("104", "1", { RELEASE_VERSION_RESERVATION_MAX_ATTEMPTS: "1" }))
+        .rejects.toThrow("failed to reserve a prerelease version after 1 attempts");
+    } finally {
+      await fixture.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("refuses to replace a versioned release asset with different bytes", async () => {
     const fixture = await startReleaseMetadataObjectStore({});
     const runnerTemp = await mkdtemp(join(tmpdir(), "od-release-immutable-assets-"));
@@ -4387,7 +4477,15 @@ async function handleReleaseMetadataObjectStoreRequest(
   objects: Record<string, unknown>,
   uploadedObjectKeys: string[],
 ): Promise<void> {
-  const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  const path = url.pathname;
+  if (request.method === "GET" && path === `/${bucket}/` && url.searchParams.get("list-type") === "2") {
+    const prefix = url.searchParams.get("prefix") ?? "";
+    const count = Object.keys(objects).some((key) => key.startsWith(prefix)) ? 1 : 0;
+    response.setHeader("content-type", "application/xml");
+    response.end(`<ListBucketResult><KeyCount>${count}</KeyCount></ListBucketResult>`);
+    return;
+  }
   const bucketPrefix = `/${bucket}/`;
   if (!path.startsWith(bucketPrefix)) {
     response.statusCode = 404;
