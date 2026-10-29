@@ -80,8 +80,8 @@ export function publicFileManualRevokePublication(
  * This must stay the same predicate the daemon applies (`publicFilePrincipal` in
  * apps/daemon/src/routes/collab-sync.ts) — rendering a button where the daemon
  * returns 409 is the exact failure this pair exists to prevent. Both are
- * deliberately narrow: team PROJECT SHARING still requires a real team, because
- * a shared project needs teammates to share it with.
+ * deliberately narrow: project sharing still needs an exact active Workspace
+ * membership and an explicit share action; private projects stay private.
  */
 export function canPublishPublicFile(
   context: WorkspaceCollabContext | null | undefined,

@@ -206,7 +206,7 @@ describe('AssistantMessage 把消息上的 artifactRefs 交给产物卡', () => 
       ).not.toBeNull(),
     );
     expect(mediaOf('hero.png')!.getAttribute('src')).toBe(
-      `/api/projects/${PROJECT_ID}/raw/hero.png`,
+      `/api/projects/${PROJECT_ID}/raw/hero.png?workspaceId=workspace-a&workspaceMemberId=member-a`,
     );
     // 降级是一张正常卡面,不是一句错误提示。
     expect(screen.getByTestId('file-ops-summary').textContent ?? '').not.toMatch(

@@ -32,6 +32,7 @@
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
+import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import type { ChatMessage } from '../../src/types';
 
 const listConversations = vi.fn();
@@ -232,7 +233,10 @@ beforeEach(() => {
   publishDaemonRunFinishedEvent.mockReturnValue(undefined);
 });
 
-afterEach(() => { cleanup(); });
+afterEach(() => {
+  cleanup();
+  resetWorkspaceContextCache();
+});
 
 describe('重挂:没有裁定的那一次不构成重试理由', () => {
   it('回放流悄悄结束(没有 done 也没有 error)时,订阅次数必须收敛', async () => {

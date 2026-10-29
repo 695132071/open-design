@@ -22,7 +22,7 @@ import {
   type ProjectDisplayStatus,
   type TeamProject,
   type WorkspaceCollabContext,
-  workspaceContextHasTeamIdentity,
+  workspaceContextHasWorkspaceIdentity,
 } from '@open-design/contracts';
 import { Icon, type IconName } from './Icon';
 import {
@@ -1223,10 +1223,10 @@ export function WorkspaceTabsBar({
     };
   }, [dockActionsProjectId]);
 
-  // 转入团队空间 shows under the rail row menu's conditions: a team plane to
-  // move into AND the right to share. A personal workspace hides the item.
+  // 转入团队空间 follows the rail menu: an exact Workspace identity and the
+  // permission to share with its members are both required.
   const moveToTeamAvailable =
-    workspaceContextHasTeamIdentity(workspaceContext)
+    workspaceContextHasWorkspaceIdentity(workspaceContext)
     && workspaceContext?.permissions?.canShareProjects === true;
   // Shared / foreign rows are decided from the same evidence the rail uses —
   // the team hub's catalog — read once per dropdown open (coalesced and cached
@@ -1234,7 +1234,7 @@ export function WorkspaceTabsBar({
   // `useTeamProjects`, which would keep polling on the project route.
   const [teamCatalog, setTeamCatalog] = useState<readonly TeamProject[]>([]);
   useEffect(() => {
-    if (!dockMenuOpen || !workspaceContextHasTeamIdentity(workspaceContext) || !workspaceContext) {
+    if (!dockMenuOpen || !workspaceContextHasWorkspaceIdentity(workspaceContext) || !workspaceContext) {
       return undefined;
     }
     let cancelled = false;

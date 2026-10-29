@@ -741,8 +741,8 @@ describe('FileViewer preview scale', () => {
       expect(document.querySelector('.viewer-loading')).toBeNull();
       expect(screen.getByTestId('artifact-preview-frame')).toBeTruthy();
     });
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(rawReads[0]?.url).not.toContain('workspaceMemberId=');
+    expect(new URL(rawReads[0]!.url, 'https://od.local').searchParams.get('workspaceId')).toBe('ws-1');
+    expect(new URL(rawReads[0]!.url, 'https://od.local').searchParams.get('workspaceMemberId')).toBe('wm-1');
     expect(rawReads[0]?.init?.headers).toMatchObject({
       'x-od-workspace-id': 'ws-1',
       'x-od-workspace-member-id': 'wm-1',
@@ -2289,7 +2289,7 @@ describe('FileViewer SVG artifacts', () => {
     ))).toBe(false);
   });
 
-  it('keeps browser-owned URL preview navigation server-authorized by project id', () => {
+  it('carries verified Team identity on browser-owned URL preview navigation', () => {
     const file = baseFile({
       name: 'team-page.html',
       path: 'team-page.html',
@@ -2318,9 +2318,9 @@ describe('FileViewer SVG artifacts', () => {
 
     expect(markup).toContain('data-od-render-mode="url-load" data-od-active="true"');
     expect(markup).toContain(
-      'src="/api/projects/project-1/raw/team-page.html?v=1710000000',
+      'src="/api/projects/project-1/raw/team-page.html?workspaceId=ws-1',
     );
-    expect(markup).not.toContain('workspaceMemberId=');
+    expect(markup).toContain('workspaceMemberId=wm-1');
   });
 
   it('routes brand extraction stop requests from the preview iframe', async () => {
@@ -5670,7 +5670,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(screen.queryByTestId('deck-thumbnail-rail')).toBeNull();
   });
 
-  it('keeps deck thumbnail resource URLs independent of shell Workspace changes', async () => {
+  it('re-scopes deck thumbnail resource URLs when the Workspace identity changes', async () => {
     const file = baseFile({
       name: 'deck.html',
       path: 'deck.html',
@@ -5709,8 +5709,8 @@ describe('FileViewer SVG artifacts', () => {
 
     const thumbnail = container.querySelector('.deck-thumbnail-frame iframe') as HTMLIFrameElement | null;
     expect(thumbnail).toBeTruthy();
-    expect(thumbnail!.srcdoc).not.toContain('workspaceId=');
-    expect(thumbnail!.srcdoc).not.toContain('workspaceMemberId=');
+    expect(thumbnail!.srcdoc).toContain('workspaceId=ws-1');
+    expect(thumbnail!.srcdoc).toContain('workspaceMemberId=wm-1');
     const originalSrcDoc = thumbnail!.srcdoc;
 
     rerender(
@@ -5721,9 +5721,10 @@ describe('FileViewer SVG artifacts', () => {
 
     await waitFor(() => {
       const updated = container.querySelector('.deck-thumbnail-frame iframe') as HTMLIFrameElement | null;
-      expect(updated?.srcdoc).toBe(originalSrcDoc);
-      expect(updated?.srcdoc).not.toContain('workspaceId=');
-      expect(updated?.srcdoc).not.toContain('workspaceMemberId=');
+      expect(updated?.srcdoc).not.toBe(originalSrcDoc);
+      expect(updated?.srcdoc).toContain('workspaceId=ws-2');
+      expect(updated?.srcdoc).toContain('workspaceMemberId=wm-2');
+      expect(updated?.srcdoc).not.toContain('workspaceId=ws-1');
     });
   });
 
@@ -10803,7 +10804,7 @@ describe('FileViewer tweaks toolbar', () => {
         expect(frame.srcdoc).toContain(
           `/api/projects/${projectId}/raw/${fontPath}`,
         );
-        expect(frame.srcdoc).not.toContain('workspaceMemberId=');
+        expect(frame.srcdoc).toContain('workspaceMemberId=wm-1');
         expect(frame.srcdoc).not.toContain('../../fonts/inter-variable-400.woff2');
       });
     } finally {
@@ -10866,7 +10867,7 @@ describe('FileViewer tweaks toolbar', () => {
         expect(frame.srcdoc).toContain(
           `/api/projects/${projectId}/raw/${imagePath}`,
         );
-        expect(frame.srcdoc).not.toContain('workspaceMemberId=');
+        expect(frame.srcdoc).toContain('workspaceMemberId=wm-1');
         expect(frame.srcdoc).not.toContain('../images/hero.png');
       });
     } finally {

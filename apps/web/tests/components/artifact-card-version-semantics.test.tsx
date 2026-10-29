@@ -62,7 +62,7 @@ beforeAll(() => {
 });
 
 const PROJECT_ID = 'c7e3b234-2fb3-4f6e-8aae-a3a00697c476';
-const raw = (name: string) => `/api/projects/${PROJECT_ID}/raw/${name}`;
+const raw = (name: string) => `/api/projects/${PROJECT_ID}/raw/${name}?workspaceId=workspace-a&workspaceMemberId=member-a`;
 
 const HTML_SHOT = '/api/projects/p1/chat-artifact-snapshots/snap-html-1/thumbnail';
 const IMAGE_SHOT = '/api/projects/p1/chat-artifact-snapshots/snap-img-1/content';

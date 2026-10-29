@@ -924,21 +924,22 @@ export function registerCollabSyncRoutes(
         ownerMemberId = null;
       }
     }
-    const resourceTeamId = capturedIdentity
+    const activeContext = Boolean(
+      context
+      && context.memberStatus === 'active'
+      && context.lifecycleState === 'active'
+      && context.workspaceId === workspaceId
+      && context.workspaceMemberId === viewerPrincipal?.memberId,
+    );
+    const resourceTeamId = capturedIdentity || activeContext
       ? viewerPrincipal?.teamId
-      : context?.workspaceType === 'team'
-        && context.memberStatus === 'active'
-        && context.lifecycleState === 'active'
-        && context.workspaceId === workspaceId
-        && context.workspaceMemberId === viewerPrincipal?.memberId
-          ? context.teamId ?? context.workspaceId
-          : null;
+      : null;
     const scope =
       ownerMemberId &&
       viewerPrincipal &&
       workspaceId &&
       resourceTeamId &&
-      (capturedIdentity != null || context?.workspaceType === 'team')
+      (capturedIdentity != null || activeContext)
         ? {
             workspaceId,
             resourceTeamId,

@@ -2034,7 +2034,32 @@ process.stdin.on("end", () => {
       .map(([file]) => file)
       .sort();
 
-    expect(playwrightConfig).toContain("testIgnore: 'visual-*.test.ts'");
+    const explicitIgnores = playwrightConfig.match(/testIgnore:\s*\[([^\]]*)\]/)?.[1];
+    expect(explicitIgnores, "Keep visual ownership and private real-service lanes outside the generic UI pool").toBeDefined();
+    expect([...explicitIgnores!.matchAll(/'([^']+)'/g)].map((match) => match[1])).toEqual([
+      "visual-*.test.ts",
+      "workspace-depletion-sandbox.test.ts",
+      "api-security-view016.test.ts",
+      "workspace-free-concurrency-sandbox.test.ts",
+      "workspace-manual-retry-sandbox.test.ts",
+      "workspace-funding-sandbox.test.ts",
+      "qa-bill001.private.test.ts",
+      "workspace-notice-sandbox.test.ts",
+      "workspace-free-wallet-sandbox.test.ts",
+      "workspace-switch-billing-sandbox.test.ts",
+      "workspace-concurrency-sandbox.test.ts",
+      "workspace-concurrency-retry-sandbox.test.ts",
+      "workspace-api-wallet-sandbox.test.ts",
+      "workspace-api-wallet-readback-sandbox.test.ts",
+      "link-closure-sandbox.test.ts",
+      "link-f04-sandbox.test.ts",
+      "link-run013-sandbox.test.ts",
+      "link-run011-matrix-sandbox.test.ts",
+      "link-run003-latency-sandbox.test.ts",
+      "link-run012-checkout-sandbox.test.ts",
+      "link-run010-reconnect-sandbox.test.ts",
+      "link-run012-controlled-sandbox.test.ts",
+    ]);
     expect(benchmarkWorkflow).toContain("  workflow_call:");
     expect(benchmarkWorkflow).toContain('description: "Exact git ref to validate. Prerelease passes its resolved build commit."');
     expect(benchmarkWorkflow).toContain("ref: ${{ inputs.ref || github.sha }}");
@@ -2527,17 +2552,17 @@ process.stdin.on("end", () => {
     }
   });
 
-  it("[P2] makes a publish=false beta dispatch retrievable on both platforms without touching a channel", async () => {
+  it("[P2] makes a publish=false beta dispatch retrievable on all enabled desktop platforms without touching a channel", async () => {
     // A publish=false dispatch is the standing shape for dogfood/QA builds: they
-    // must never enter the public beta feed. mac already handed back a DMG, but
-    // the Windows job produced nothing retrievable at all, so a Windows dogfood
-    // build was impossible without also publishing. Both platforms now emit a
-    // GitHub artifact plus an R2 upload under the dogfood prefix.
+    // must never enter the public beta feed. Every enabled desktop platform must
+    // retain its installer even when public publication is disabled: a GitHub
+    // artifact plus an R2 upload under the dogfood prefix.
     const workflow = await readFile(releaseBetaWorkflowPath, "utf8");
     const macJob = sectionBetween(workflow, "  build_mac_arm64:", "  build_mac_x64:");
+    const macX64Job = sectionBetween(workflow, "  build_mac_x64:", "  build_win_x64:");
     const winJob = sectionBetween(workflow, "  build_win_x64:", "  build_linux_x64:");
 
-    for (const [label, job] of [["mac_arm64", macJob], ["win_x64", winJob]] as const) {
+    for (const [label, job] of [["mac_arm64", macJob], ["mac_x64", macX64Job], ["win_x64", winJob]] as const) {
       expect(job, label).toContain("run: pnpm exec tools-release publish-dogfood");
       expect(job, label).toContain("DOGFOOD_VERSION: ${{ needs.metadata.outputs.beta_version }}");
       expect(job, label).toContain("DOGFOOD_BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}");
@@ -2546,6 +2571,11 @@ process.stdin.on("end", () => {
       expect(job, label).toContain("DOGFOOD_BUILD_JSON_PATH:");
       expect(job, label).toContain("DOGFOOD_BUILD_JSON_KEYS:");
     }
+
+    expect(macX64Job).toContain("name: open-design-beta-mac-x64-dmg");
+    expect(macX64Job).toContain("namespaces/release-beta-x64/**/*.dmg");
+    expect(macX64Job).toContain("DOGFOOD_BUILD_JSON_PATH: ${{ runner.temp }}/release-build/mac_x64/build.json");
+    expect(macX64Job).toContain("DOGFOOD_BUILD_JSON_KEYS: dmgPath");
 
     // The Windows installer is retrievable as a GitHub artifact too, covering
     // every win_x64_target (nsis -> setup exe, zip -> portable zip, all -> both).
@@ -2558,7 +2588,7 @@ process.stdin.on("end", () => {
     const dogfoodSteps = workflow.split("\n      - name: ").filter((step) =>
       /publish-dogfood|for manual distribution/.test(step)
     );
-    expect(dogfoodSteps).toHaveLength(4);
+    expect(dogfoodSteps).toHaveLength(6);
     for (const step of dogfoodSteps) {
       expect(step, step.split("\n")[0]).toContain("if: ${{ !cancelled() && !inputs.publish }}");
     }

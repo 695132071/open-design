@@ -2122,7 +2122,7 @@ describe('WorkspaceTabsBar dock dropdown project actions', () => {
     ]);
   });
 
-  it('hides move-to-team in a personal workspace', async () => {
+  it('offers move-to-team in an authorized personal workspace', async () => {
     render(
       <WorkspaceTabsBar
         route={projectRoute}
@@ -2134,7 +2134,7 @@ describe('WorkspaceTabsBar dock dropdown project actions', () => {
       />,
     );
     const menu = await openRowMenu();
-    expect(within(menu).queryByRole('menuitem', { name: 'recentProjects.moveToTeam' })).toBeNull();
+    expect(within(menu).getByRole('menuitem', { name: 'recentProjects.moveToTeam' })).toBeTruthy();
     expect(within(menu).getByRole('menuitem', { name: 'designs.menuDelete' })).toBeTruthy();
   });
 

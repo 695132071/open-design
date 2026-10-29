@@ -690,7 +690,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       const projectId = grant?.projectId ?? (typeof req.query.projectId === 'string' ? req.query.projectId : '');
       if (!projectId) return sendApiError(res, 400, 'BAD_REQUEST', 'projectId is required for the scoped cloud catalogue');
       if (grant) {
-        if (!await ctx.authorizeProjectToolRequest(res, projectId, { mode: 'read' })) return;
+        if (!await ctx.authorizeProjectToolRequest(res, projectId, { mode: 'read' }, grant.runId)) return;
       } else if (!await ctx.authorizeProjectRequest(req, res, projectId, { mode: 'read' })) return;
       try {
         const workspaceId = getWorkspaceProjectByProjectId(db, projectId)?.workspaceId?.trim() || undefined;
@@ -1024,7 +1024,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     }
   });
 
-  const handleStockSearch = async (req: any, res: any, projectId: string, grant: ToolTokenGrant | null) => {
+  const handleStockSearch = async (req: any, res: any, projectId: string, grant: ToolTokenGrant | null, authorizedWorkspaceId?: string | null) => {
     const project = getProject(db, projectId);
     if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
     let request: StockSearchRequest;
@@ -1036,6 +1036,22 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       return sendApiError(res, 400, 'INVALID_STOCK_REQUEST', err.message);
     }
     const run = grant?.runId ? design.runs.get(grant.runId) : null;
+    let workspaceId = getWorkspaceProjectByProjectId(db, projectId)?.workspaceId?.trim();
+    if (grant) {
+      const scope = run?.workspaceScope;
+      const bound = scope?.schemaVersion === 1 && scope.projectId === projectId
+        && scope.source === 'persisted_project_binding'
+        && typeof scope.workspaceId === 'string' && Boolean(scope.workspaceId.trim());
+      const accountScoped = scope?.schemaVersion === 1 && scope.projectId === projectId
+        && scope.source === 'unbound_account' && scope.workspaceId === null;
+      if (run?.projectId !== projectId || (!bound && !accountScoped)
+        || (scope.workspaceId ?? null) !== (authorizedWorkspaceId ?? null)) {
+        return sendApiError(res, 403, 'FORBIDDEN', "stock search requires the run's original authorized project workspace");
+      }
+      // A genuine unbound scope stays unbound; absence of proof never borrows
+      // the mutable project's current wallet or the daemon's ambient selection.
+      workspaceId = bound ? scope.workspaceId.trim() : undefined;
+    }
     const analytics = await mediaAnalyticsContext(req, grant);
     const recorder = await createStockRecorder({ slotCount: request.slots.length, env: {
       ...process.env,
@@ -1049,7 +1065,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       OD_STOCK_ANALYTICS_LOCALE: analytics?.locale ?? '',
     } });
     try {
-      const workspaceId = getWorkspaceProjectByProjectId(db, projectId)?.workspaceId?.trim();
       const report = await stockSearch({
         ...request,
         cwd: resolveProjectDir(PROJECTS_DIR, projectId, project.metadata),
@@ -1070,8 +1085,9 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
   app.post(STOCK_SEARCH_TOOL_ENDPOINT, async (req, res) => {
     const grant = authorizeToolRequest(req, res, 'media:stock-search', { endpoint: STOCK_SEARCH_TOOL_ENDPOINT });
     if (!grant) return;
-    if (!await ctx.authorizeProjectToolRequest(res, grant.projectId, { mode: 'write', capability: 'writeFiles' })) return;
-    await handleStockSearch(req, res, grant.projectId, grant);
+    const authority = await ctx.authorizeProjectToolRequest(res, grant.projectId, { mode: 'write', capability: 'writeFiles' }, grant.runId);
+    if (!authority) return;
+    await handleStockSearch(req, res, grant.projectId, grant, authority.workspace?.workspaceId ?? null);
   });
 
   // Existing UI/project clients use the same execution path. Bearer callers
@@ -1082,10 +1098,13 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     const grant = bearer ? authorizeToolRequest(req, res, 'media:stock-search', { endpoint: STOCK_SEARCH_TOOL_ENDPOINT }) : null;
     if (bearer && !grant) return;
     if (grant && grant.projectId !== req.params.id) return sendApiError(res, 403, 'FORBIDDEN', 'projectId is derived from the tool token');
+    let authorizedWorkspaceId: string | null | undefined;
     if (grant) {
-      if (!await ctx.authorizeProjectToolRequest(res, grant.projectId, { mode: 'write', capability: 'writeFiles' })) return;
+      const authority = await ctx.authorizeProjectToolRequest(res, grant.projectId, { mode: 'write', capability: 'writeFiles' }, grant.runId);
+      if (!authority) return;
+      authorizedWorkspaceId = authority.workspace?.workspaceId ?? null;
     } else if (!await ctx.authorizeProjectRequest(req, res, req.params.id, { mode: 'write', capability: 'writeFiles' })) return;
-    await handleStockSearch(req, res, req.params.id, grant);
+    await handleStockSearch(req, res, req.params.id, grant, authorizedWorkspaceId);
   });
 
   app.post('/api/projects/:id/media/hyperframes/scaffold', async (req, res) => {
@@ -1125,6 +1144,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         res,
         grant.projectId,
         { mode: 'write', capability: 'writeFiles' },
+        grant.runId,
       )) return;
       await handleHyperFramesScaffold(req, res, grant.projectId);
     } catch (err: any) {
@@ -1189,6 +1209,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         res,
         grant.projectId,
         { mode: 'write', capability: 'writeFiles' },
+        grant.runId,
       )) return;
       await handleGenerate(req, res, { projectId: grant.projectId, grant });
     } catch (err: any) {
@@ -1275,6 +1296,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         res,
         toolGrant.projectId,
         { mode: 'read' },
+        toolGrant.runId,
       )
     ) return;
 

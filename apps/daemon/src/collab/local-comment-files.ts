@@ -8,6 +8,31 @@ import type { runVelaCommand } from '../integrations/vela-command.js';
 import { commitCommentFileFacts, retiredCommentFileMutation } from './comment-file-authority.js';
 import { canonicalCommentFilePath, commentFilesAtReceipt, parseCommentFileState } from './comment-file-facts.js';
 
+/** Local save authority is distinct from creator-only cloud publication. */
+export function prepareLocalProjectCommentFile(input: {
+  db: Database.Database;
+  projectId: string;
+  filePath: string;
+  context: { workspaceId: string; workspaceMemberId: string } | null;
+  requireWorkspaceAuthority: boolean;
+}): string | undefined {
+  const { db, projectId, filePath, context, requireWorkspaceAuthority } = input;
+  if (!/\.html?$/i.test(filePath)) return undefined;
+  assertCommentFileNotPending(db, projectId, { filePath });
+  const state = parseCommentFileState(getProject(db, projectId)?.metadata?._commentFiles);
+  const current = state?.files.find(fact => !fact.retired && fact.sourceFilePath === filePath);
+  if (current) return current.sourceFileId;
+  if (requireWorkspaceAuthority) {
+    const binding = getWorkspaceProjectByProjectId(db, projectId);
+    if (binding?.workspaceId && (!context || binding.workspaceId !== context.workspaceId
+      || (binding.visibility !== 'team' && binding.createdByWorkspaceMemberId !== context.workspaceMemberId))) {
+      throw new Error('COMMENT_FILE_AUTHORITY_UNAVAILABLE');
+    }
+  }
+  // A local UUID admits no cloud receipt and grants no publication authority.
+  return createLocalCommentFiles(db).identity(projectId, filePath);
+}
+
 /** Paths whose current new-protocol lifetime must not be moved by managed rename.
  * Local pre-share comments carry a durable artifact UUID before catalog admission.
  * Join that exact UUID AND original path; never infer identities for historical rows.

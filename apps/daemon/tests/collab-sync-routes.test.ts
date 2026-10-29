@@ -2330,10 +2330,12 @@ describe('collab sync routes', () => {
         sharedAt: '2026-07-30T00:00:00.000Z',
       };
     });
+    const publication = await publicShareFixture();
+    const prepare = vi.spyOn(publication.sharePublishing!, 'prepare');
     const api = await startSyncServer(
       { current: async () => workspaceA },
       {
-        ...await publicShareFixture(),
+        ...publication,
         resolveProjectDir: () => dir,
         resolveSharedProject,
       },
@@ -2354,11 +2356,19 @@ describe('collab sync routes', () => {
     expect(unpublish.status).toBe(200);
     expect(resolveSharedProject).not.toHaveBeenCalled();
     expect(ownershipScopes).toHaveLength(0);
-    for (const scope of ownershipScopes) {
+    // Public publication delegates permission to its pinned cloud session,
+    // so no local ownership pre-read runs. Assert the actual history/session
+    // boundaries are nonempty and stay in A rather than vacuously checking it.
+    expect(publication.readProjectShareState).toHaveBeenCalled();
+    for (const [scope] of publication.readProjectShareState.mock.calls) {
       expect(scope).toMatchObject({
-        workspaceId: 'workspace-a',
-        resourceTeamId: 'workspace-a',
-        viewerMemberId: 'member-a',
+        projectId: 'p1', resourceTeamId: 'workspace-a', ownerMemberId: 'member-a',
+      });
+    }
+    expect(prepare).toHaveBeenCalled();
+    for (const [scope] of prepare.mock.calls) {
+      expect(scope).toMatchObject({
+        projectId: 'p1', resourceTeamId: 'workspace-a', ownerMemberId: 'member-a',
       });
     }
     for (const call of vi.mocked(runVelaResourceCommand).mock.calls) {

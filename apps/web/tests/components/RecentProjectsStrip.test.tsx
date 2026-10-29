@@ -1393,7 +1393,7 @@ describe('A5 — main no-share delete baseline', () => {
     // other byte, including the title/aria-labelledby relationship.
     const titleId = dialog.getAttribute('aria-labelledby')!;
     expect(dialog.outerHTML.replaceAll(titleId, 'delete-title')).toBe(
-      `<div class="_dialog_8e4a21 modal modal-confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" data-testid="project-delete-confirm-dialog"><h2 class="_title_8e4a21" id="delete-title">Delete project</h2><p class="_description_8e4a21">Delete "My project"?</p><div class="_footer_8e4a21 row"><button type="button" data-testid="project-delete-confirm-cancel">Cancel</button><button type="button" class="primary danger" data-testid="project-delete-confirm-accept">Delete</button></div></div>`,
+      `<div tabindex="-1" class="_focusTarget_8e4a21 _dialog_8e4a21 modal modal-confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" data-testid="project-delete-confirm-dialog"><h2 class="_title_8e4a21" id="delete-title">Delete project</h2><p class="_description_8e4a21">Delete "My project"?</p><div class="_footer_8e4a21 row"><button type="button" data-testid="project-delete-confirm-cancel">Cancel</button><button type="button" class="primary danger" data-testid="project-delete-confirm-accept">Delete</button></div></div>`,
     );
     expect(onDelete).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));

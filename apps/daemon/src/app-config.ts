@@ -23,6 +23,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import type { OdNextRolloutMode } from '@open-design/contracts';
 
+import { amrSettingsBindingConflict } from './integrations/amr-endpoint-binding.js';
 import { expandHomePrefix } from './home-expansion.js';
 
 import {
@@ -933,6 +934,9 @@ async function doWrite(
   partial: Record<string, unknown>,
 ): Promise<AppConfigPrefs> {
   assertWritableControlValues(partial);
+  if (amrSettingsBindingConflict(partial.agentCliEnv)) {
+    throw new InvalidAppConfigValueError('agentCliEnv', 'AMR environment binding cannot be overridden by CLI settings');
+  }
   const existing = await readAppConfig(dataDir);
   const next: Record<string, unknown> = { ...existing };
   for (const key of Object.keys(partial)) {

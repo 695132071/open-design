@@ -390,6 +390,10 @@ export interface RunCreatedProps extends RunTaskLineageProps {
   project_id: string;
   conversation_id: string | null;
   run_id: string;
+  /** Daemon-authorized workspace pinned to this run, never the current UI selection. */
+  workspace_id?: string;
+  /** Positive safe integer from that workspace's authorized context; omitted when unknown. */
+  member_count?: number;
   project_kind: TrackingProjectKind | null;
   /** Frozen from project metadata at physical Run creation, independent of strategy. */
   project_intent?: TrackingProjectIntent;

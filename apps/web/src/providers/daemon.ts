@@ -1296,6 +1296,8 @@ export interface VelaLiveAccount {
 }
 
 export interface VelaLoginStatus {
+  /** One-time AMR new-registration claim persisted by the CLI. */
+  registrationInvite?: { accountId: string; deviceAuthorizationId: string };
   loggedIn: boolean;
   sessionState?: import('@open-design/contracts').AmrSessionState;
   credentialRevision?: string;
@@ -1421,9 +1423,15 @@ export async function fetchAmrWalletSnapshot(options: { refresh?: boolean } = {}
   }
 }
 
-export async function fetchAmrModels(): Promise<AmrModelsResponse | null> {
+export async function fetchAmrModels(
+  context?: WorkspaceCollabContext | null,
+  options?: { refresh?: boolean },
+): Promise<AmrModelsResponse | null> {
   try {
-    const resp = await fetch('/api/amr/models', { cache: 'no-store' });
+    const resp = await fetch(options?.refresh ? '/api/amr/models?refresh=1' : '/api/amr/models', {
+      cache: 'no-store',
+      ...(context ? { headers: workspaceProjectHeaders(context) } : {}),
+    });
     if (!resp.ok) return null;
     return (await resp.json()) as AmrModelsResponse;
   } catch {
